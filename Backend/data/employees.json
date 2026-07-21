@@ -1,0 +1,566 @@
+[
+    {
+        "id": "#4829",
+        "name": "John Doe",
+        "department": "Logistics",
+        "requests": {
+            "total": 5,
+            "pantalones": 2,
+            "poleras": 2,
+            "polerones": 1,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#5021",
+        "name": "Jane Smith",
+        "department": "Security",
+        "requests": {
+            "total": 8,
+            "pantalones": 3,
+            "poleras": 3,
+            "polerones": 1,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1023",
+        "name": "Robert Jones",
+        "department": "Maintenance",
+        "requests": {
+            "total": 3,
+            "pantalones": 1,
+            "poleras": 1,
+            "polerones": 1,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#3512",
+        "name": "Emily Davis",
+        "department": "Operations",
+        "requests": {
+            "total": 6,
+            "pantalones": 2,
+            "poleras": 2,
+            "polerones": 2,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#7784",
+        "name": "Michael Brown",
+        "department": "Security",
+        "requests": {
+            "total": 4,
+            "pantalones": 2,
+            "poleras": 2,
+            "polerones": 0,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#2341",
+        "name": "Sarah Wilson",
+        "department": "Logistics",
+        "requests": {
+            "total": 7,
+            "pantalones": 2,
+            "poleras": 3,
+            "polerones": 1,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#8923",
+        "name": "David Martinez",
+        "department": "Operations",
+        "requests": {
+            "total": 5,
+            "pantalones": 1,
+            "poleras": 2,
+            "polerones": 2,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#4567",
+        "name": "Lisa Anderson",
+        "department": "Maintenance",
+        "requests": {
+            "total": 9,
+            "pantalones": 3,
+            "poleras": 3,
+            "polerones": 2,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#6789",
+        "name": "James Taylor",
+        "department": "Security",
+        "requests": {
+            "total": 2,
+            "pantalones": 1,
+            "poleras": 1,
+            "polerones": 0,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#3344",
+        "name": "Maria Garcia",
+        "department": "Logistics",
+        "requests": {
+            "total": 6,
+            "pantalones": 2,
+            "poleras": 2,
+            "polerones": 1,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#9988",
+        "name": "Thomas Lee",
+        "department": "Operations",
+        "requests": {
+            "total": 4,
+            "pantalones": 1,
+            "poleras": 2,
+            "polerones": 1,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#7766",
+        "name": "Patricia White",
+        "department": "Maintenance",
+        "requests": {
+            "total": 8,
+            "pantalones": 3,
+            "poleras": 2,
+            "polerones": 2,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#5544",
+        "name": "Daniel Harris",
+        "department": "Security",
+        "requests": {
+            "total": 3,
+            "pantalones": 1,
+            "poleras": 1,
+            "polerones": 1,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#2233",
+        "name": "Jennifer Clark",
+        "department": "Logistics",
+        "requests": {
+            "total": 7,
+            "pantalones": 2,
+            "poleras": 3,
+            "polerones": 2,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#8877",
+        "name": "Christopher Lewis",
+        "department": "Operations",
+        "requests": {
+            "total": 5,
+            "pantalones": 2,
+            "poleras": 2,
+            "polerones": 1,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#4455",
+        "name": "Nancy Walker",
+        "department": "Maintenance",
+        "requests": {
+            "total": 6,
+            "pantalones": 2,
+            "poleras": 2,
+            "polerones": 1,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#6677",
+        "name": "Matthew Hall",
+        "department": "Security",
+        "requests": {
+            "total": 4,
+            "pantalones": 1,
+            "poleras": 2,
+            "polerones": 1,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#1122",
+        "name": "Linda Allen",
+        "department": "Logistics",
+        "requests": {
+            "total": 9,
+            "pantalones": 3,
+            "poleras": 3,
+            "polerones": 2,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#9900",
+        "name": "Anthony Young",
+        "department": "Operations",
+        "requests": {
+            "total": 2,
+            "pantalones": 1,
+            "poleras": 1,
+            "polerones": 0,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#3366",
+        "name": "Barbara King",
+        "department": "Maintenance",
+        "requests": {
+            "total": 8,
+            "pantalones": 3,
+            "poleras": 2,
+            "polerones": 2,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1020",
+        "name": "Alex Johnson",
+        "department": "Logistics",
+        "requests": {
+            "total": 5,
+            "pantalones": 2,
+            "poleras": 1,
+            "polerones": 1,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1021",
+        "name": "Chris Williams",
+        "department": "Security",
+        "requests": {
+            "total": 3,
+            "pantalones": 1,
+            "poleras": 1,
+            "polerones": 0,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1022",
+        "name": "Jordan Brown",
+        "department": "Maintenance",
+        "requests": {
+            "total": 7,
+            "pantalones": 2,
+            "poleras": 3,
+            "polerones": 1,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1024",
+        "name": "Taylor Jones",
+        "department": "Operations",
+        "requests": {
+            "total": 4,
+            "pantalones": 1,
+            "poleras": 2,
+            "polerones": 1,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#1025",
+        "name": "Morgan Miller",
+        "department": "Logistics",
+        "requests": {
+            "total": 6,
+            "pantalones": 2,
+            "poleras": 2,
+            "polerones": 1,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1026",
+        "name": "Casey Davis",
+        "department": "Security",
+        "requests": {
+            "total": 8,
+            "pantalones": 3,
+            "poleras": 2,
+            "polerones": 2,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1027",
+        "name": "Riley Garcia",
+        "department": "Maintenance",
+        "requests": {
+            "total": 2,
+            "pantalones": 0,
+            "poleras": 1,
+            "polerones": 1,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#1028",
+        "name": "Sam Rodriguez",
+        "department": "Operations",
+        "requests": {
+            "total": 5,
+            "pantalones": 2,
+            "poleras": 2,
+            "polerones": 0,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1029",
+        "name": "Alex Williams",
+        "department": "Logistics",
+        "requests": {
+            "total": 4,
+            "pantalones": 1,
+            "poleras": 2,
+            "polerones": 1,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#1030",
+        "name": "Chris Brown",
+        "department": "Security",
+        "requests": {
+            "total": 7,
+            "pantalones": 2,
+            "poleras": 3,
+            "polerones": 1,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1031",
+        "name": "Jordan Jones",
+        "department": "Maintenance",
+        "requests": {
+            "total": 3,
+            "pantalones": 1,
+            "poleras": 1,
+            "polerones": 0,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1032",
+        "name": "Taylor Miller",
+        "department": "Operations",
+        "requests": {
+            "total": 9,
+            "pantalones": 3,
+            "poleras": 3,
+            "polerones": 2,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1033",
+        "name": "Morgan Davis",
+        "department": "Logistics",
+        "requests": {
+            "total": 5,
+            "pantalones": 2,
+            "poleras": 1,
+            "polerones": 2,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#1034",
+        "name": "Casey Garcia",
+        "department": "Security",
+        "requests": {
+            "total": 6,
+            "pantalones": 2,
+            "poleras": 2,
+            "polerones": 1,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1035",
+        "name": "Riley Rodriguez",
+        "department": "Maintenance",
+        "requests": {
+            "total": 4,
+            "pantalones": 1,
+            "poleras": 2,
+            "polerones": 1,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#1036",
+        "name": "Sam Johnson",
+        "department": "Operations",
+        "requests": {
+            "total": 8,
+            "pantalones": 3,
+            "poleras": 2,
+            "polerones": 2,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1037",
+        "name": "Alex Brown",
+        "department": "Logistics",
+        "requests": {
+            "total": 3,
+            "pantalones": 1,
+            "poleras": 1,
+            "polerones": 1,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#1038",
+        "name": "Chris Jones",
+        "department": "Security",
+        "requests": {
+            "total": 7,
+            "pantalones": 2,
+            "poleras": 3,
+            "polerones": 1,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1039",
+        "name": "Jordan Miller",
+        "department": "Maintenance",
+        "requests": {
+            "total": 5,
+            "pantalones": 2,
+            "poleras": 1,
+            "polerones": 2,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#1040",
+        "name": "Taylor Davis",
+        "department": "Operations",
+        "requests": {
+            "total": 6,
+            "pantalones": 2,
+            "poleras": 2,
+            "polerones": 1,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1041",
+        "name": "Morgan Garcia",
+        "department": "Logistics",
+        "requests": {
+            "total": 4,
+            "pantalones": 1,
+            "poleras": 2,
+            "polerones": 0,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1042",
+        "name": "Casey Rodriguez",
+        "department": "Security",
+        "requests": {
+            "total": 9,
+            "pantalones": 3,
+            "poleras": 3,
+            "polerones": 2,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1043",
+        "name": "Riley Johnson",
+        "department": "Maintenance",
+        "requests": {
+            "total": 2,
+            "pantalones": 0,
+            "poleras": 1,
+            "polerones": 1,
+            "toallas": 0
+        }
+    },
+    {
+        "id": "#1044",
+        "name": "Sam Williams",
+        "department": "Operations",
+        "requests": {
+            "total": 8,
+            "pantalones": 3,
+            "poleras": 2,
+            "polerones": 2,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1045",
+        "name": "Alex Jones",
+        "department": "Logistics",
+        "requests": {
+            "total": 5,
+            "pantalones": 2,
+            "poleras": 1,
+            "polerones": 1,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1046",
+        "name": "Chris Miller",
+        "department": "Security",
+        "requests": {
+            "total": 6,
+            "pantalones": 2,
+            "poleras": 2,
+            "polerones": 1,
+            "toallas": 1
+        }
+    },
+    {
+        "id": "#1047",
+        "name": "Jordan Davis",
+        "department": "Maintenance",
+        "requests": {
+            "total": 4,
+            "pantalones": 1,
+            "poleras": 2,
+            "polerones": 1,
+            "toallas": 0
+        }
+    }
+]

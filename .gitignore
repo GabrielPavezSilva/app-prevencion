@@ -1,0 +1,75 @@
+# ============================================================
+# .gitignore — Raíz del repositorio app-lavanderia
+# ============================================================
+
+# ── Archivos de entorno (sensibles) ─────────────────────────
+.env
+.env.local
+.env.production
+.env.example
+
+# ── Sistema operativo ────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Python (general) ─────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+*.egg
+
+# ── Entornos virtuales ───────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── Logs de servidor ─────────────────────────────────────────
+*.log
+server_log.txt
+uvicorn*.log
+
+# ── Build / distribución ─────────────────────────────────────
+build/
+dist/
+*.spec
+
+# ── Archivos temporales / locales ────────────────────────────
+temp_sdk/
+installer_output/
+
+# ── Archivos de lint y análisis local ────────────────────────
+lint_*.txt
+lint_final*
+build_*.txt
+build_v*.txt
+build_error*.txt
+lint_compact.txt
+lint_final_new.txt
+
+# ── Binarios de terceros ─────────────────────────────────────
+nssm.exe
+*.dll
+
+# ── Certificados SSL locales ──────────────────────────────────
+*.pem
+*.key
+*.crt
+
+# ── Node.js ──────────────────────────────────────────────────
+node_modules/
+
+# ── IDE/Editor ───────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+features/
+
+# ── Docker local override ────────────────────────────────────
+compose.override.yml

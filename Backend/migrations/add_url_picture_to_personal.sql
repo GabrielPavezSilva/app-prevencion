@@ -1,0 +1,2 @@
+ALTER TABLE personal
+    ADD COLUMN IF NOT EXISTS url_picture VARCHAR(500) NULL;

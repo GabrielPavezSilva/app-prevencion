@@ -1,0 +1,35 @@
+.reports-page {
+    max-width: 1800px;
+    margin: 0 auto;
+}
+
+.reports-header {
+    margin-bottom: 24px;
+}
+
+.reports-title {
+    font-family: var(--font-heading);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    margin-bottom: 4px;
+}
+
+.reports-subtitle {
+    font-size: 14px;
+    color: var(--color-text-muted);
+    max-width: 800px;
+}
+
+.reports-grid {
+    display: grid;
+    grid-template-columns: 45% 55%;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+@media (max-width: 1200px) {
+    .reports-grid {
+        grid-template-columns: 1fr;
+    }
+}

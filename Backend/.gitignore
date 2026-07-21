@@ -1,0 +1,25 @@
+# ── Archivos de entorno (sensibles) ─────────────────────────
+.env
+.env.local
+
+# ── Entornos virtuales ───────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── Python compilado ─────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ── Logs de servidor ─────────────────────────────────────────
+*.log
+server_log.txt
+uvicorn.log
+uvicorn_error.log
+uvicorn_out.log
+
+# ── Archivos de sistema ──────────────────────────────────────
+.DS_Store
+Thumbs.db

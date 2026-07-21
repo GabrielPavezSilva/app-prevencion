@@ -1,0 +1,36 @@
+[
+    {
+        "id": "admin",
+        "username": "admin",
+        "password_hash": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.G0z5C.j5v5v5v5",
+        "password_plain": "admin123",
+        "name": "Álex Morgan",
+        "role": "admin",
+        "department": "Gerencia",
+        "avatar": null
+    },
+    {
+        "id": "EMP-8821",
+        "username": "jperez",
+        "password_hash": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.G0z5C.j5v5v5v5",
+        "password_plain": "worker123",
+        "name": "Juan Pérez",
+        "role": "worker",
+        "department": "Logística",
+        "shift": "Turno Mañana",
+        "zone": "Zona C",
+        "avatar": null
+    },
+    {
+        "id": "EMP-4512",
+        "username": "mrodriguez",
+        "password_hash": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.G0z5C.j5v5v5v5",
+        "password_plain": "worker123",
+        "name": "María Rodríguez",
+        "role": "worker",
+        "department": "Almacén",
+        "shift": "Turno Tarde",
+        "zone": "Zona A",
+        "avatar": null
+    }
+]

@@ -1,0 +1,192 @@
+/* ── Barra de navegación superior ───────────────────────────── */
+.topnav {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-topbar);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 64px;
+  padding: 0 24px;
+  background: var(--color-topbar);
+  border-bottom: 1px solid var(--color-card-border);
+}
+
+/* Marca */
+.topnav__brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  flex-shrink: 0;
+  text-decoration: none;
+}
+.topnav__logo {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.topnav__brand-name {
+  font-family: var(--font-heading);
+  font-size: 20px;
+  letter-spacing: 0.01em;
+  color: var(--color-text-primary);
+  line-height: 1;
+}
+
+/* Navegación principal */
+.topnav__links {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.topnav__links::-webkit-scrollbar { display: none; }
+
+.topnav__link {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  white-space: nowrap;
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.topnav__link svg { opacity: 0.75; }
+.topnav__link:hover {
+  background: var(--color-surface-2);
+  color: var(--color-text-primary);
+}
+.topnav__link.active {
+  color: var(--color-accent-bright);
+  background: var(--color-accent-light);
+}
+.topnav__link.active svg { opacity: 1; }
+.topnav__link.active::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: -11px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--color-accent-bright);
+}
+
+/* Cluster de utilidades */
+.topnav__utils {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.topnav__icon-btn {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+}
+.topnav__icon-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent-bright);
+  background: var(--color-accent-light);
+}
+.topnav__icon-btn.danger:hover {
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+  background: var(--color-brand-light);
+}
+
+/* Chip de usuario */
+.topnav__user {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 10px 5px 5px;
+  border-radius: 999px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+}
+.topnav__avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.topnav__user-meta { display: flex; flex-direction: column; line-height: 1.15; }
+.topnav__user-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topnav__user-role { font-size: 13px; color: var(--color-text-muted); text-transform: capitalize; }
+
+/* Hamburguesa (solo móvil) */
+.topnav__burger { display: none; }
+
+/* ── Responsive ──────────────────────────────────────────── */
+@media (max-width: 860px) {
+  .topnav__user-meta { display: none; }
+}
+
+@media (max-width: 760px) {
+  .topnav { gap: 12px; padding: 0 16px; }
+  .topnav__links {
+    position: absolute;
+    top: 64px;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    padding: 12px 16px;
+    background: var(--color-topbar);
+    border-bottom: 1px solid var(--color-card-border);
+    box-shadow: var(--shadow-lg);
+    overflow: visible;
+    max-height: calc(100vh - 64px);
+    overflow-y: auto;
+  }
+  .topnav__links[data-open="false"] { display: none; }
+  .topnav__link { height: 48px; }
+  .topnav__link.active::after { display: none; }
+  .topnav__link.active { box-shadow: inset 3px 0 0 var(--color-accent-bright); }
+  .topnav__burger {
+    display: grid;
+    margin-left: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topnav__link { transition: none; }
+}

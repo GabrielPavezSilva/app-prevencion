@@ -1,0 +1,75 @@
+﻿name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+env:
+  IMAGE_BACKEND: ghcr.io/${{ github.repository_owner }}/lavanderia-backend
+  IMAGE_FRONTEND: ghcr.io/${{ github.repository_owner }}/lavanderia-frontend
+
+jobs:
+  build:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      sha: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./Backend
+          push: true
+          tags: |
+            ${{ env.IMAGE_BACKEND }}:latest
+            ${{ env.IMAGE_BACKEND }}:${{ github.sha }}
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./Frontend
+          push: true
+          build-args: |
+            VITE_API_URL=${{ secrets.VITE_API_URL }}
+            VITE_HARDWARE_URL=${{ secrets.VITE_HARDWARE_URL }}
+          tags: |
+            ${{ env.IMAGE_FRONTEND }}:latest
+            ${{ env.IMAGE_FRONTEND }}:${{ github.sha }}
+
+  deploy:
+    name: Deploy on VPS
+    runs-on: self-hosted
+    needs: build
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Pull new images
+        run: |
+          docker pull ${{ env.IMAGE_BACKEND }}:latest
+          docker pull ${{ env.IMAGE_FRONTEND }}:latest
+
+      - name: Rolling restart
+        working-directory: /opt/etl-bd/proyectos-rrhh/lavanderia/app-lavanderia
+        run: |
+          docker compose up -d --no-deps --wait backend
+          docker compose up -d --no-deps --wait frontend
+
+      - name: Cleanup old images
+        run: docker image prune -f

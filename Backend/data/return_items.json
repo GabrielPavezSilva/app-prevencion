@@ -1,0 +1,101 @@
+[
+    {
+        "id": 1,
+        "employeeId": "#8921",
+        "name": "Chaleco Táctico L2",
+        "sku": "TV-2024-1",
+        "size": "Talla L",
+        "image": null,
+        "quantityRequested": 2,
+        "quantityReturned": 2,
+        "status": "Buen Estado"
+    },
+    {
+        "id": 2,
+        "employeeId": "#8921",
+        "name": "Botas de Trabajo Pesado",
+        "sku": "BT-992-10",
+        "size": "Talla 10",
+        "image": null,
+        "quantityRequested": 1,
+        "quantityReturned": 0,
+        "status": ""
+    },
+    {
+        "id": 3,
+        "employeeId": "#8921",
+        "name": "Porta Credencial",
+        "sku": "ACC-ID-01",
+        "size": "",
+        "image": null,
+        "quantityRequested": 1,
+        "quantityReturned": 1,
+        "status": "Dañado"
+    },
+    {
+        "id": 4,
+        "employeeId": "#4421",
+        "name": "Guantes de Seguridad",
+        "sku": "GS-445-M",
+        "size": "Talla M",
+        "image": null,
+        "quantityRequested": 2,
+        "quantityReturned": 0,
+        "status": ""
+    },
+    {
+        "id": 5,
+        "employeeId": "#1102",
+        "name": "Casco de Protección",
+        "sku": "CP-112-STD",
+        "size": "Estándar",
+        "image": null,
+        "quantityRequested": 1,
+        "quantityReturned": 1,
+        "status": "Buen Estado"
+    },
+    {
+        "id": 6,
+        "employeeId": "#1102",
+        "name": "Chaleco Reflectante",
+        "sku": "CR-223-XL",
+        "size": "Talla XL",
+        "image": null,
+        "quantityRequested": 2,
+        "quantityReturned": 2,
+        "status": "Buen Estado"
+    },
+    {
+        "id": 7,
+        "employeeId": "#1102",
+        "name": "Botas de Seguridad",
+        "sku": "BS-334-9",
+        "size": "Talla 9",
+        "image": null,
+        "quantityRequested": 1,
+        "quantityReturned": 0,
+        "status": ""
+    },
+    {
+        "id": 8,
+        "employeeId": "#1102",
+        "name": "Gafas Protectoras",
+        "sku": "GP-556-CLR",
+        "size": "",
+        "image": null,
+        "quantityRequested": 1,
+        "quantityReturned": 1,
+        "status": "Muy Dañado"
+    },
+    {
+        "id": 9,
+        "employeeId": "#1102",
+        "name": "Uniforme Operativo",
+        "sku": "UO-778-L",
+        "size": "Talla L",
+        "image": null,
+        "quantityRequested": 2,
+        "quantityReturned": 0,
+        "status": ""
+    }
+]

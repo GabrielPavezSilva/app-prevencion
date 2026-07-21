@@ -1,0 +1,123 @@
+/* Left panel — hidden on mobile */
+.login-left-panel {
+    flex: 1;
+}
+
+/* Right panel — fija 420px en desktop; full width en móvil (evita overflow horizontal) */
+.login-right-panel {
+    width: 420px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    background: var(--color-bg);
+}
+
+@media (max-width: 768px) {
+    .login-left-panel {
+        display: none !important;
+    }
+    .login-right-panel {
+        width: 100%;
+        padding: 32px 24px;
+    }
+}
+
+/* Entrada del formulario — reutiliza fadeInUp de index.css */
+.login-card-enter {
+    animation: fadeInUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .login-card-enter {
+        animation: none;
+    }
+}
+
+/* Form elements */
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.form-label {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+}
+
+.form-input {
+    padding: 11px 14px;
+    min-height: 44px; /* target táctil de planta */
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    font-family: var(--font-family);
+    font-size: var(--font-size-base);
+    color: var(--color-text-primary);
+    background: var(--color-input-bg);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    outline: none;
+    width: 100%;
+}
+
+.form-input:focus {
+    border-color: var(--color-accent-bright);
+    box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.15);
+}
+
+.form-input::placeholder {
+    color: var(--color-text-muted);
+}
+
+.form-input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Primary button */
+.btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 48px; /* botón de acceso: target táctil generoso */
+    padding: 12px 20px;
+    background: var(--color-accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-md);
+    font-family: var(--font-family);
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: var(--color-accent-hover); /* fix: --color-accent-dark no existe */
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(13, 148, 136, 0.35);
+}
+
+.btn-primary:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+/* Spinner */
+.spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}

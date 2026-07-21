@@ -1,0 +1,94 @@
+services:
+
+  # ── Base de datos PostgreSQL ─────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-civot}
+      POSTGRES_USER:     ${POSTGRES_USER:-civot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ:                America/Santiago
+      PGTZ:              America/Santiago
+    command: ["postgres", "-c", "timezone=America/Santiago"]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - postgres_backups:/backups
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-civot} -d ${POSTGRES_DB:-civot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "127.0.0.1:5433:5432"
+    labels:
+      ofelia.enabled: "true"
+      ofelia.job-exec.db-backup.schedule: "0 3 * * *"
+      ofelia.job-exec.db-backup.command: >
+        bash -c "pg_dump -U ${POSTGRES_USER:-civot} ${POSTGRES_DB:-civot}
+        | gzip > /backups/db_$(date +%Y%m%d_%H%M%S).sql.gz
+        && find /backups -name '*.sql.gz' -mtime +30 -delete
+        && echo 'Backup OK'"
+
+  # ── Backend FastAPI ──────────────────────────────────────────────────────
+  backend:
+    image: ghcr.io/bgacitua/lavanderia-backend:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-civot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-civot}
+      JWT_SECRET_KEY:    ${JWT_SECRET_KEY}
+      JWT_EXPIRE_MINUTES: 480
+      ENVIRONMENT:       ${ENVIRONMENT:-production}
+      # Puertos RFID no aplican en VPS; se mantienen por si se ejecuta en local
+      RFID_RECEPTION_PORT:  COM2
+      RFID_ASSIGNMENT_PORT: COM3
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+
+  # ── Frontend React (SPA estática servida por Nginx) ──────────────────────
+  frontend:
+    image: ghcr.io/bgacitua/lavanderia-frontend:latest
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # ── Scheduler de tareas (backups, etc.) ─────────────────────────────────
+  ofelia:
+    image: mcuadros/ofelia:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - internal
+    command: daemon --docker
+
+  # ── Nginx reverse proxy (routing) ───────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8082:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - internal
+
+volumes:
+  postgres_data:
+  postgres_backups:
+
+networks:
+  internal:
+    name: lavanderia_network
+    driver: bridge

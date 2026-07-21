@@ -1,0 +1,74 @@
+[
+    {
+        "id": "#8921",
+        "name": "John Doe",
+        "department": "Seguridad",
+        "status": "ACTIVO",
+        "expirationDate": "2023-10-24",
+        "pendingItems": 3,
+        "returnStatus": "PENDIENTE"
+    },
+    {
+        "id": "#4421",
+        "name": "Jane Smith",
+        "department": "Mantenimiento",
+        "status": "ACTIVO",
+        "expirationDate": "2023-11-15",
+        "pendingItems": 1,
+        "returnStatus": "Vencido"
+    },
+    {
+        "id": "#1102",
+        "name": "Robert Fox",
+        "department": "Operaciones",
+        "status": "ACTIVO",
+        "expirationDate": "2023-12-01",
+        "pendingItems": 5,
+        "returnStatus": "Vencido"
+    },
+    {
+        "id": "#9931",
+        "name": "Esther Howard",
+        "department": "Logística",
+        "status": "INACTIVO",
+        "expirationDate": "2023-10-10",
+        "pendingItems": 5,
+        "returnStatus": "PENDIENTE"
+    },
+    {
+        "id": "#2341",
+        "name": "Sarah Wilson",
+        "department": "Seguridad",
+        "status": "ACTIVO",
+        "expirationDate": "2023-11-20",
+        "pendingItems": 4,
+        "returnStatus": "PENDIENTE"
+    },
+    {
+        "id": "#7788",
+        "name": "Michael Chen",
+        "department": "Seguridad",
+        "status": "ACTIVO",
+        "expirationDate": "2023-10-30",
+        "pendingItems": 2,
+        "returnStatus": "PENDIENTE"
+    },
+    {
+        "id": "#5566",
+        "name": "Emily Davis",
+        "department": "Mantenimiento",
+        "status": "ACTIVO",
+        "expirationDate": "2023-11-05",
+        "pendingItems": 3,
+        "returnStatus": "Vencido"
+    },
+    {
+        "id": "#3344",
+        "name": "David Martinez",
+        "department": "Operaciones",
+        "status": "ACTIVO",
+        "expirationDate": "2023-12-15",
+        "pendingItems": 2,
+        "returnStatus": "PENDIENTE"
+    }
+]

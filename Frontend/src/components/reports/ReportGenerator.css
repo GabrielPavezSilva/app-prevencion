@@ -1,0 +1,207 @@
+.report-generator-card {
+    background: var(--color-card);
+    border: 1px solid var(--color-card-border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    transition: var(--transition);
+}
+
+.report-generator-card:hover {
+    border-color: rgba(13, 148, 136, 0.3);
+}
+
+.generator-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.generator-icon {
+    font-size: 18px;
+    opacity: 0.8;
+}
+
+.generator-title {
+    font-family: var(--font-heading);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    flex: 1;
+}
+
+.active-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 500;
+    background: var(--color-success-light);
+    color: var(--color-success);
+    border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.section-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 12px;
+}
+
+.date-range-section {
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.date-inputs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.date-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.date-input-group label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+}
+
+.date-input {
+    padding: 9px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-input-bg);
+    font-family: var(--font-body);
+    font-size: 14px;
+    color: var(--color-text-primary);
+    transition: var(--transition);
+    color-scheme: dark;
+}
+
+.date-input:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.15);
+}
+
+.data-inclusion-section {
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.checkbox-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.checkbox-card {
+    display: flex;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: var(--transition);
+    background: transparent;
+}
+
+.checkbox-card:hover {
+    border-color: var(--color-accent);
+    background: var(--color-accent-light);
+}
+
+.checkbox-card input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    flex-shrink: 0;
+    margin-top: 2px;
+    accent-color: var(--color-accent);
+}
+
+.checkbox-content {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.checkbox-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.checkbox-desc {
+    font-size: 13px;
+    color: var(--color-text-muted);
+    line-height: 1.4;
+}
+
+.export-actions {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.export-btn {
+    padding: 9px 16px;
+    border: none;
+    border-radius: var(--radius-md);
+    font-family: var(--font-body);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition);
+    white-space: nowrap;
+}
+
+.export-pdf,
+.export-excel {
+    background: var(--color-accent);
+    color: #fff;
+}
+
+.export-pdf:hover,
+.export-excel:hover {
+    background: var(--color-accent-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(13, 148, 136, 0.35);
+}
+
+.export-generate {
+    background: transparent;
+    color: var(--color-text-secondary);
+    border: 1px solid var(--color-border);
+}
+
+.export-generate:hover:not(:disabled) {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+    background: var(--color-accent-light);
+}
+
+.export-generate:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+@media (max-width: 1024px) {
+    .checkbox-group { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+    .date-inputs { grid-template-columns: 1fr; }
+    .export-actions { grid-template-columns: 1fr; }
+}

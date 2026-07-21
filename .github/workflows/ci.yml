@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-backend:
+    name: Lint Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Lint
+        run: ruff check .
+        working-directory: Backend
+
+  build-check:
+    name: Docker Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build backend image
+        run: docker build -t lavanderia-backend-ci ./Backend
+
+      - name: Build frontend image
+        run: |
+          docker build \
+            --build-arg VITE_API_URL=https://civot.cramer.cl/api \
+            --build-arg VITE_HARDWARE_URL=http://localhost:5050 \
+            -t lavanderia-frontend-ci \
+            ./Frontend

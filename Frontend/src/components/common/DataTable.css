@@ -1,0 +1,186 @@
+/* ── Tabla estilo hoja de cálculo (Excel) ─────────────────────── */
+.xls {
+    width: 100%;
+    overflow: auto;
+    border: 1px solid var(--color-card-border);
+    border-radius: var(--radius-md);
+    background: var(--color-card);
+    /* el borde derecho/inferior de cada celda dibuja la cuadrícula;
+       el contenedor cierra el lado exterior */
+}
+
+.xls--state {
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    color: var(--color-text-muted);
+}
+.xls__skeleton-row { height: 38px; border-radius: 6px; }
+
+.xls__table {
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 14px;
+    color: var(--color-text-primary);
+    table-layout: fixed;
+}
+
+/* ── Encabezado fijo ── */
+.xls__th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--color-surface-2);
+    border-bottom: 2px solid var(--color-card-border);
+    border-right: 1px solid var(--color-card-border);
+    padding: 0;
+    text-align: left;
+    font-weight: 600;
+    white-space: nowrap;
+    user-select: none;
+}
+.xls__th:last-child { border-right: none; }
+
+.xls__th-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    height: 42px;
+    padding: 0 12px;
+    background: transparent;
+    border: none;
+    font: inherit;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    text-align: left;
+    cursor: pointer;
+}
+.xls__th-btn:disabled { cursor: default; }
+.xls__th-btn:not(:disabled):hover { color: var(--color-text-primary); }
+
+.xls__th-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.xls__sort {
+    display: inline-flex;
+    flex-shrink: 0;
+    color: var(--color-text-muted);
+    opacity: 0.45;
+    transition: opacity var(--transition-fast), color var(--transition-fast);
+}
+.xls__sort[data-dir="asc"],
+.xls__sort[data-dir="desc"] {
+    opacity: 1;
+    color: var(--color-accent-bright);
+}
+
+/* manija de redimensionado de columna */
+.xls__resizer {
+    position: absolute;
+    top: 0;
+    right: -3px;
+    height: 100%;
+    width: 7px;
+    cursor: col-resize;
+    touch-action: none;
+    z-index: 3;
+}
+.xls__resizer::after {
+    content: '';
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    right: 3px;
+    width: 2px;
+    background: transparent;
+    transition: background var(--transition-fast);
+}
+.xls__resizer:hover::after,
+.xls__resizer[data-resizing]::after {
+    background: var(--color-accent-bright);
+}
+
+/* ── Fila de filtros por columna ── */
+.xls__filter-th {
+    position: sticky;
+    top: 44px;                 /* justo bajo el encabezado fijo */
+    z-index: 2;
+    background: var(--color-surface-2);
+    border-bottom: 1px solid var(--color-card-border);
+    border-right: 1px solid var(--color-card-border);
+    padding: 6px 8px;
+    vertical-align: middle;
+}
+.xls__filter-th:last-child { border-right: none; }
+.xls__filter-th.xls__pin { z-index: 4; }
+
+.xls__filter {
+    width: 100%;
+    height: 32px;
+    padding: 0 8px;
+    font-size: 13px;
+    font-family: var(--font-body);
+    color: var(--color-text-primary);
+    background: var(--color-input-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    outline: none;
+}
+.xls__filter:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 2px var(--color-accent-light);
+}
+
+.xls__noresults {
+    padding: 28px 16px;
+    text-align: center;
+    color: var(--color-text-muted);
+    font-style: italic;
+}
+
+/* ── Celdas ── */
+.xls__td {
+    height: 44px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--color-border-light);
+    border-right: 1px solid var(--color-border-light);
+    color: var(--color-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+.xls__td:last-child { border-right: none; }
+.xls__td--center { text-align: center; }
+.xls__td--right { text-align: right; font-variant-numeric: tabular-nums; }
+
+.xls__row:hover .xls__td { background: var(--color-accent-light); }
+.xls__row:last-child .xls__td { border-bottom: none; }
+
+/* celdas de código/identificador (SKU, RUT) */
+.xls-mono {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.01em;
+    font-weight: 500;
+    color: var(--color-text-primary);
+}
+
+/* columna congelada (freeze panes) */
+.xls__pin {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--color-card);
+    border-right: 2px solid var(--color-card-border);
+}
+.xls__th.xls__pin { z-index: 4; background: var(--color-surface-2); }
+.xls__row:hover .xls__td.xls__pin { background: var(--color-accent-light); }
+
+@media (prefers-reduced-motion: reduce) {
+    .xls__sort, .xls__resizer::after { transition: none; }
+}

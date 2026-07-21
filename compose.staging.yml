@@ -1,0 +1,81 @@
+# Stack STAGING — paralelo a producción, totalmente aislado.
+# Proyecto: lavanderia-staging (red/volúmenes/containers propios).
+# Prod (compose.yml) queda intacto. Se corre desde el mismo dir para compartir .env.
+#
+#   docker compose -f compose.staging.yml up -d --build
+#
+# Acceso: SSH tunnel -> ssh -L 8083:127.0.0.1:8083 <vps>  ->  http://localhost:8083
+# Ver docs/staging-deploy.md para el runbook completo (incl. restore de la DB).
+
+name: lavanderia-staging
+
+services:
+  # ── PostgreSQL aislado (se restaura del último dump de prod) ──────────────
+  postgres-staging:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-civot}
+      POSTGRES_USER:     ${POSTGRES_USER:-civot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ:                America/Santiago
+      PGTZ:              America/Santiago
+    command: ["postgres", "-c", "timezone=America/Santiago"]
+    volumes:
+      - postgres_staging_data:/var/lib/postgresql/data
+    networks:
+      - staging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-civot} -d ${POSTGRES_DB:-civot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Backend FastAPI — MISMA imagen que prod (rediseño no toca backend) ────
+  backend-staging:
+    image: ghcr.io/bgacitua/lavanderia-backend:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-civot}:${POSTGRES_PASSWORD}@postgres-staging:5432/${POSTGRES_DB:-civot}
+      JWT_SECRET_KEY:     ${JWT_SECRET_KEY}
+      JWT_EXPIRE_MINUTES: 480
+      ENVIRONMENT:        production
+    depends_on:
+      postgres-staging:
+        condition: service_healthy
+    networks:
+      - staging
+
+  # ── Frontend rediseñado — build desde la rama pulled (VITE_API_URL relativo) ─
+  frontend-staging:
+    build:
+      context: ./Frontend
+      args:
+        VITE_API_URL:      /api
+        VITE_HARDWARE_URL: http://localhost:5050
+    image: lavanderia-frontend:staging
+    restart: unless-stopped
+    networks:
+      - staging
+
+  # ── Nginx reverse proxy staging (solo loopback :8083) ────────────────────
+  nginx-staging:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8083:80"
+    volumes:
+      - ./nginx/nginx.staging.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend-staging
+      - frontend-staging
+    networks:
+      - staging
+
+volumes:
+  postgres_staging_data:
+
+networks:
+  staging:
+    name: lavanderia_staging_network
+    driver: bridge

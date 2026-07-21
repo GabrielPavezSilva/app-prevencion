@@ -1,0 +1,44 @@
+.layout {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--color-bg);
+}
+
+.layout-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 28px 32px 48px;
+}
+
+/* Encabezado de página (título + subtítulo) */
+.page-head {
+    margin-bottom: 24px;
+}
+
+.page-head__title {
+    font-size: clamp(1.8rem, 1.4rem + 1.4vw, 2.4rem);
+    color: var(--color-text-primary);
+    margin: 0;
+}
+
+.page-head__subtitle {
+    margin-top: 4px;
+    font-size: var(--font-size-base);
+    color: var(--color-text-muted);
+    max-width: 70ch;
+}
+
+@media (max-width: 768px) {
+    .layout-content {
+        padding: 20px 18px 40px;
+    }
+    .page-head { margin-bottom: 18px; }
+}
+
+@media (max-width: 480px) {
+    .layout-content {
+        padding: 16px 14px 32px;
+    }
+}

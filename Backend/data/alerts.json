@@ -1,0 +1,26 @@
+[
+    {
+        "id": 1,
+        "type": "error",
+        "title": "Baja Existencia: Camisas (M)",
+        "description": "Cantidad bajo el umbral (restan 15).",
+        "timestamp": "Hace 2 horas",
+        "read": false
+    },
+    {
+        "id": 2,
+        "type": "success",
+        "title": "Sincronización Completa",
+        "description": "Conciliación diaria finalizada.",
+        "timestamp": "Hace 5 horas",
+        "read": false
+    },
+    {
+        "id": 3,
+        "type": "warning",
+        "title": "Devolución Pendiente",
+        "description": "Oficial J. Doe programado para devolución.",
+        "timestamp": "Ayer",
+        "read": false
+    }
+]
