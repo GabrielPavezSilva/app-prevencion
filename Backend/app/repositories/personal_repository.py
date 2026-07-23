@@ -16,7 +16,7 @@ class PersonalRepository:
         if search:
             query = text("""
                 SELECT p.rut, p.nombre_completo, e.nombre_empresa AS empresa, p.cargo,
-                       p.area_id, p.subarea_id, p.talla_id,
+                       p.area_id, p.subarea_id,
                        s.nombre_subarea, p.url_picture
                 FROM personal p
                 JOIN empresa e ON e.empresa_id = p.empresa_id
@@ -32,7 +32,7 @@ class PersonalRepository:
         else:
             query = text("""
                 SELECT p.rut, p.nombre_completo, e.nombre_empresa AS empresa, p.cargo,
-                       p.area_id, p.subarea_id, p.talla_id,
+                       p.area_id, p.subarea_id,
                        s.nombre_subarea, p.url_picture
                 FROM personal p
                 JOIN empresa e ON e.empresa_id = p.empresa_id
