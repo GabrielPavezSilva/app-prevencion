@@ -2,7 +2,10 @@
 API Router - Agrupa todos los endpoints
 """
 from fastapi import APIRouter
-from app.api.v1.endpoints import personal, auth, stats, templates, reportes, inventario, superadmin, epp
+from app.api.v1.endpoints import (
+    personal, auth, stats, templates, reportes, inventario, superadmin,
+    epp, entregas, importaciones,
+)
 
 api_router = APIRouter()
 
@@ -14,4 +17,6 @@ api_router.include_router(templates.router, prefix="/templates", tags=["Template
 api_router.include_router(reportes.router, prefix="/reportes", tags=["Reportes"])
 api_router.include_router(inventario.router, prefix="/inventario", tags=["Inventario"])
 api_router.include_router(epp.router, prefix="/epp", tags=["EPP"])
+api_router.include_router(entregas.router, prefix="/entregas", tags=["Entregas"])
+api_router.include_router(importaciones.router, prefix="/importaciones", tags=["Importaciones"])
 api_router.include_router(superadmin.router, prefix="/superadmin", tags=["Superadmin"])

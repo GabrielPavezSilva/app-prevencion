@@ -1,0 +1,79 @@
+"""
+Service del flujo de entregas de EPP — validaciones de negocio sobre
+EntregasRepository. Traduce errores de negocio (ValueError) a HTTPException.
+"""
+from fastapi import HTTPException
+from sqlalchemy.orm import Session
+from typing import List, Dict, Any, Optional
+
+from app.repositories.entregas_repository import EntregasRepository
+from app.repositories.epp_repository import EppRepository
+from app.schemas.entregas import MOTIVOS_ENTREGA
+
+
+class EntregasService:
+    def __init__(self, db: Session):
+        self.repo = EntregasRepository(db)
+        self.epp = EppRepository(db)
+
+    def _validar_producto_talla(self, producto_id: int, talla_id: Optional[int]) -> None:
+        producto = self.epp.get_producto_by_id(producto_id)
+        if not producto:
+            raise HTTPException(status_code=404, detail=f"Producto {producto_id} no encontrado")
+        if not producto["activo"]:
+            raise HTTPException(status_code=400, detail=f"El producto '{producto['nombre']}' está desactivado")
+        if producto["talla_aplica"] and talla_id is None:
+            raise HTTPException(status_code=400, detail=f"El producto '{producto['nombre']}' requiere talla")
+        if not producto["talla_aplica"] and talla_id is not None:
+            raise HTTPException(status_code=400, detail=f"El producto '{producto['nombre']}' no maneja tallas")
+
+    def _get_trabajador(self, rut: str) -> Dict[str, Any]:
+        trabajador = self.repo.get_trabajador(rut)
+        if not trabajador:
+            raise HTTPException(status_code=404, detail=f"Trabajador con RUT {rut} no encontrado o inactivo")
+        return trabajador
+
+    # ── Entregas (NUEVA / PERDIDA) ───────────────────────────────────────────
+
+    def crear_entregas(self, rut: str, lineas: List[Dict[str, Any]],
+                       usuario_id: Optional[int]) -> List[Dict[str, Any]]:
+        trabajador = self._get_trabajador(rut)
+        for linea in lineas:
+            if linea["motivo"] not in MOTIVOS_ENTREGA:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Motivo '{linea['motivo']}' inválido en entrega directa "
+                           f"(use {' o '.join(MOTIVOS_ENTREGA)}; para daño use /sustitucion)",
+                )
+            self._validar_producto_talla(linea["producto_id"], linea.get("talla_id"))
+        try:
+            return self.repo.crear_entregas(trabajador, lineas, usuario_id)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    # ── Sustitución (DANO) ───────────────────────────────────────────────────
+
+    def crear_sustitucion(self, rut: str, entrega_reemplazada_id: int, producto_id: int,
+                          talla_id: Optional[int], cantidad: int, observacion: Optional[str],
+                          usuario_id: Optional[int], uuid: Optional[str]) -> Dict[str, Any]:
+        trabajador = self._get_trabajador(rut)
+        self._validar_producto_talla(producto_id, talla_id)
+        try:
+            return self.repo.crear_sustitucion(
+                trabajador=trabajador, entrega_reemplazada_id=entrega_reemplazada_id,
+                producto_id=producto_id, talla_id=talla_id, cantidad=cantidad,
+                observacion=observacion, usuario_id=usuario_id, uuid=uuid,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    # ── Consultas ────────────────────────────────────────────────────────────
+
+    def listar_entregas(self, rut: Optional[str] = None, motivo: Optional[str] = None,
+                        area_id: Optional[int] = None, desde: Optional[str] = None,
+                        hasta: Optional[str] = None) -> List[Dict[str, Any]]:
+        return self.repo.get_entregas(rut, motivo, area_id, desde, hasta)
+
+    def listar_vigentes(self, rut: str) -> List[Dict[str, Any]]:
+        self._get_trabajador(rut)
+        return self.repo.get_vigentes_por_rut(rut)
