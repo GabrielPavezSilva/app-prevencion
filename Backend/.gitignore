@@ -1,6 +1,7 @@
 # ── Archivos de entorno (sensibles) ─────────────────────────
 .env
 .env.local
+.env_original
 
 # ── Entornos virtuales ───────────────────────────────────────
 .venv/

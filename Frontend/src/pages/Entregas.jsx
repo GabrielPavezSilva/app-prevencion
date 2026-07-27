@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import { searchEmployees } from "../services/staffService";
 import { getProductos } from "../services/eppService";
@@ -45,6 +46,12 @@ const TabRegistrar = () => {
       .then(([p, t]) => { setProductos(p); setTallas(t); })
       .catch(() => {});
   }, []);
+
+  // RUT precargado desde el modal de EPP de la página Personal
+  const location = useLocation();
+  useEffect(() => {
+    if (location.state?.rut) setSearch(location.state.rut);
+  }, [location.state]);
 
   // Búsqueda de trabajador (debounce)
   useEffect(() => {

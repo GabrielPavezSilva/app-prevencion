@@ -24,12 +24,18 @@ class EntregasRepository:
 
     # ── Lecturas de apoyo ────────────────────────────────────────────────────
 
-    def get_trabajador(self, rut: str) -> Optional[Dict[str, Any]]:
+    def get_trabajador(self, rut: str, solo_activos: bool = True) -> Optional[Dict[str, Any]]:
+        """
+        Busca al trabajador. `solo_activos=False` para consultas de lectura: un
+        desvinculado (soft-delete del sync de RRHH) puede tener EPP sin devolver
+        y hay que poder verlos, aunque no se le pueda entregar nada nuevo.
+        """
+        filtro_activo = " AND COALESCE(activo, TRUE) = TRUE" if solo_activos else ""
         row = self.db.execute(
-            text("""
-                SELECT rut, nombre_completo, empresa_id
+            text(f"""
+                SELECT rut, nombre_completo, empresa_id, COALESCE(activo, TRUE) AS activo
                 FROM personal
-                WHERE rut = :rut AND COALESCE(activo, TRUE) = TRUE
+                WHERE rut = :rut{filtro_activo}
             """),
             {"rut": rut},
         ).mappings().fetchone()

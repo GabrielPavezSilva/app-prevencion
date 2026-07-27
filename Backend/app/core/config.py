@@ -22,12 +22,21 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 480  # 8 horas
 
-    # Configuración API BUK - opcionales
-    BUK_API_BASE_URL: str = ""
-    BUK_API_KEY: str = ""
+    # ── Fuente del sync de personal (Fase 4) ────────────────────────────────
+    # Base `rh_cramer` (schema `rh`), poblada desde Buk por el ETL de RRHH.
+    # Solo lectura. En local se llega por túnel SSH:
+    #   ssh -N -L 5434:localhost:5432 <usuario>@192.9.200.12
+    # OJO: puerto local 5434, no 5433 — ahí vive el db_prevencion de desarrollo.
+    # En producción el software corre en el mismo servidor: conexión directa.
+    EMPLOYEES_DATABASE_URL: str = ""
 
-    # Token de BUK
-    BUK_TOKEN: str = ""
+    # Campos individuales (usados si EMPLOYEES_DATABASE_URL no está definida).
+    # Preferirlos cuando la contraseña tiene caracteres que rompen una URL.
+    EMPLOYEES_DB_HOST: str = "localhost"
+    EMPLOYEES_DB_PORT: int = 5434
+    EMPLOYEES_DB_USER: str = ""
+    EMPLOYEES_DB_PASSWORD: str = ""
+    EMPLOYEES_DB_NAME: str = "rh_cramer"
 
     # Entorno: "development" | "production"
     ENVIRONMENT: str = "development"
@@ -45,6 +54,21 @@ class Settings(BaseSettings):
         return (
             f"postgresql+psycopg2://{self.DB_USER_PG}:{pw}"
             f"@{self.DB_HOST_PG}:{self.DB_PORT_PG}/{self.DB_NAME_PG}"
+        )
+
+    def get_employees_url(self) -> str:
+        """
+        URL de la base de RRHH (fuente del sync de personal).
+        Retorna "" si no está configurada — el sync responde 503 en ese caso.
+        """
+        if self.EMPLOYEES_DATABASE_URL:
+            return self.EMPLOYEES_DATABASE_URL
+        if not (self.EMPLOYEES_DB_USER and self.EMPLOYEES_DB_PASSWORD):
+            return ""
+        pw = quote_plus(self.EMPLOYEES_DB_PASSWORD)
+        return (
+            f"postgresql+psycopg2://{self.EMPLOYEES_DB_USER}:{pw}"
+            f"@{self.EMPLOYEES_DB_HOST}:{self.EMPLOYEES_DB_PORT}/{self.EMPLOYEES_DB_NAME}"
         )
 
 # Instancia global de configuración

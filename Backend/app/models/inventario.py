@@ -65,28 +65,62 @@ class RolModulo(Base):
 
 # ── Catálogos organizacionales (sin cambios) ─────────────────────────────────
 
-class Area(Base):
-    """Catálogo de áreas."""
-    __tablename__ = "areas"
-
-    area_id = Column(Integer, primary_key=True, autoincrement=True)
-    nombre_area = Column(String(100), nullable=False, unique=True)
-
-
-class SubArea(Base):
-    """Catálogo de subáreas."""
-    __tablename__ = "subareas"
-
-    subarea_id = Column(Integer, primary_key=True, autoincrement=True)
-    nombre_subarea = Column(String(100), nullable=False, unique=True)
-
-
 class Empresa(Base):
-    """Catálogo de empresas (multiempresa — D4)."""
+    """
+    Catálogo de empresas (multiempresa — D4).
+
+    Fase 4: `origen_id` espeja `rh.areas.first_level_id` de la base `rh_cramer`.
+    Los 5 nombres de empresa sí son únicos en el origen, así que `nombre_empresa`
+    conserva su UNIQUE.
+    """
     __tablename__ = "empresa"
 
     empresa_id = Column(Integer, primary_key=True, autoincrement=True)
     nombre_empresa = Column(String(100), nullable=False, unique=True)
+    origen_id = Column(Integer, nullable=True, unique=True)
+
+
+class Area(Base):
+    """
+    Catálogo de áreas (2º nivel de la jerarquía de RRHH).
+
+    Fase 4: el nombre de área NO es único a nivel global — "Administración" y
+    "Operaciones" existen en varias empresas (5 nombres repartidos en 16 filas
+    reales del origen). Por eso el UNIQUE es (nombre_area, empresa_id) y no
+    `nombre_area` solo: con el UNIQUE viejo las áreas de empresas distintas se
+    fusionaban y el reporte por área sumaba empresas.
+
+    `empresa_id` es nullable solo para no romper filas legacy anteriores al
+    sync; toda fila creada por el sync la trae.
+    """
+    __tablename__ = "areas"
+    __table_args__ = (
+        UniqueConstraint("nombre_area", "empresa_id", name="uq_areas_nombre_empresa"),
+    )
+
+    area_id = Column(Integer, primary_key=True, autoincrement=True)
+    nombre_area = Column(String(100), nullable=False)
+    empresa_id = Column(Integer, ForeignKey("empresa.empresa_id"), nullable=True)
+    origen_id = Column(Integer, nullable=True)   # rh.areas.second_level_id (tiene NULLs en origen)
+
+
+class SubArea(Base):
+    """
+    Catálogo de subáreas (3er nivel — la unidad organizacional real).
+
+    Fase 4: 71 nombres distintos sobre 163 unidades reales en el origen; el mismo
+    nombre se repite incluso dentro de una misma empresa bajo áreas distintas.
+    La identidad estable es `origen_id` = `rh.areas.id`, que sí es único global.
+    """
+    __tablename__ = "subareas"
+    __table_args__ = (
+        UniqueConstraint("nombre_subarea", "area_id", name="uq_subareas_nombre_area"),
+    )
+
+    subarea_id = Column(Integer, primary_key=True, autoincrement=True)
+    nombre_subarea = Column(String(100), nullable=False)
+    area_id = Column(Integer, ForeignKey("areas.area_id"), nullable=True)
+    origen_id = Column(Integer, nullable=True, unique=True)   # rh.areas.id
 
 
 # ── Personal (adaptada — D1/D2) ──────────────────────────────────────────────
@@ -103,13 +137,17 @@ class Personal(Base):
       - buk_id / sync_at nuevos (trazabilidad de sincronización, Fase 4).
       - SE ELIMINA huella_digital (poda biométrica) y talla_id (D2: la talla
         se elige manual en cada entrega, no se preserva en el trabajador).
+
+    Fase 4: `cargo` pasa de VARCHAR(50) a VARCHAR(100) — `rh.employees.name_role`
+    llega a 59 caracteres. `buk_id` guarda `rh.employees.person_id` (no `id`):
+    el id de contrato cambia si alguien reingresa, el de persona no.
     """
     __tablename__ = "personal"
 
     rut = Column(String(20), primary_key=True)
     nombre_completo = Column(String(100), nullable=False)
     empresa_id = Column(Integer, ForeignKey("empresa.empresa_id"), nullable=False)
-    cargo = Column(String(50), nullable=True)
+    cargo = Column(String(100), nullable=True)
     area_id = Column(Integer, ForeignKey("areas.area_id"), nullable=True)
     subarea_id = Column(Integer, ForeignKey("subareas.subarea_id"), nullable=True)
     url_picture = Column(String(500), nullable=True)

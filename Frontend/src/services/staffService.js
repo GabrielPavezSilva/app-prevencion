@@ -1,34 +1,29 @@
 import { apiClient } from './api';
 
 /**
- * Get employees with pagination and filters
- * @param {number} page - Page number (1-indexed)
- * @param {number} pageSize - Number of items per page
- * @param {Object} filters - Filter options { search, department }
- * @returns {Promise<Object>} Paginated employees response
+ * Personal (solo lectura): la fuente de verdad es la base de RRHH y los datos
+ * entran por el sync (POST /personal/sync). No hay CRUD desde la aplicación.
  */
-export const getEmployees = async (_page = 1, _pageSize = 5, filters = {}) => {
-    // Backend nuevo usa /api/personal/todos y acepta param 'search'
-    // Ignoramos page/pageSize por ahora si el backend no lo soporta en ese endpoint,
-    // o asumimos que "todos" es todos. El backend implementado devuelve lista completa filtrada.
-    
+
+/**
+ * Lista el personal. Por defecto solo activos.
+ * @param {Object} filters - { search, incluirInactivos }
+ * @returns {Promise<Array>} Lista plana de empleados
+ */
+export const getEmployees = async (filters = {}) => {
     const params = new URLSearchParams();
-    if (filters.search) {
-        params.append('search', filters.search);
-    }
-    
-    return apiClient.get(`/personal/todos?${params.toString()}`);
+    if (filters.search) params.append('search', filters.search);
+    if (filters.incluirInactivos) params.append('incluir_inactivos', 'true');
+    const qs = params.toString();
+    return apiClient.get(`/personal/todos${qs ? `?${qs}` : ''}`);
 };
 
 /**
- * Search employees by term
- * @param {string} searchTerm - Search term
- * @param {number} page - Page number
- * @param {number} pageSize - Items per page
- * @returns {Promise<Object>} Search results
+ * Busca empleados por nombre o RUT.
+ * @param {string} searchTerm
  */
-export const searchEmployees = async (searchTerm, page = 1, pageSize = 5) => {
-    return getEmployees(page, pageSize, { search: searchTerm });
+export const searchEmployees = async (searchTerm) => {
+    return getEmployees({ search: searchTerm });
 };
 
 export const getPersonalByRut = async (rut) => {
@@ -36,66 +31,16 @@ export const getPersonalByRut = async (rut) => {
 };
 
 /**
- * Get employee by ID
- * @param {string} id - Employee ID
- * @returns {Promise<Object>} Employee data
+ * Dispara la sincronización con RRHH. Corre sola a diario; esto es para el
+ * alta del día.
+ * @param {boolean} dryRun - calcula el resultado sin escribir
+ * @returns {Promise<Object>} Resumen { creados, actualizados, desactivados, errores… }
  */
-export const getEmployeeById = async (id) => {
-    return apiClient.get(`/staff/employees/${encodeURIComponent(id)}`);
+export const sincronizarPersonal = async (dryRun = false) => {
+    return apiClient.post(`/personal/sync${dryRun ? '?dry_run=true' : ''}`);
 };
 
-/**
- * Create new employee
- * @param {Object} employeeData - Employee data
- * @returns {Promise<Object>} Created employee
- */
-export const createEmployee = async (employeeData) => {
-    return apiClient.post('/staff/employees', employeeData);
+/** Fecha de la última sincronización con RRHH. */
+export const getEstadoSync = async () => {
+    return apiClient.get('/personal/sync/estado');
 };
-
-/**
- * Update employee
- * @param {string} id - Employee ID
- * @param {Object} employeeData - Updated data
- * @returns {Promise<Object>} Updated employee
- */
-export const updateEmployee = async (id, employeeData) => {
-    return apiClient.put(`/staff/employees/${encodeURIComponent(id)}`, employeeData);
-};
-
-/**
- * Delete employee
- * @param {string} id - Employee ID
- * @returns {Promise<Object>} Success response
- */
-export const deleteEmployee = async (id) => {
-    return apiClient.delete(`/staff/employees/${encodeURIComponent(id)}`);
-};
-
-/**
- * Get list of departments
- * @returns {Promise<Array>} Array of departments
- */
-export const getDepartments = async () => {
-    return apiClient.get('/staff/departments');
-};
-
-/**
- * Obtiene todas las asignaciones (para cruce con personal: N° prendas asignadas por RUT).
- * @returns {Promise<Array>} Lista de asignaciones con rut, fecha_devolucion, etc.
- */
-export const getAsignaciones = async () => {
-    return apiClient.get('/asignaciones/todas');
-};
-
-/**
- * Export employees data
- * @param {string} format - Export format (csv, excel, pdf)
- * @returns {Promise<Blob>} File blob
- */
-export const exportEmployees = async (format = 'csv') => {
-    // TODO: Implement export endpoint in backend
-    console.log(`Exporting employees as ${format}...`);
-    return { success: true, format };
-};
-

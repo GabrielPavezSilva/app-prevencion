@@ -27,10 +27,12 @@ class EntregasService:
         if not producto["talla_aplica"] and talla_id is not None:
             raise HTTPException(status_code=400, detail=f"El producto '{producto['nombre']}' no maneja tallas")
 
-    def _get_trabajador(self, rut: str) -> Dict[str, Any]:
-        trabajador = self.repo.get_trabajador(rut)
+    def _get_trabajador(self, rut: str, solo_activos: bool = True) -> Dict[str, Any]:
+        trabajador = self.repo.get_trabajador(rut, solo_activos)
         if not trabajador:
-            raise HTTPException(status_code=404, detail=f"Trabajador con RUT {rut} no encontrado o inactivo")
+            detalle = (f"Trabajador con RUT {rut} no encontrado o inactivo" if solo_activos
+                       else f"Trabajador con RUT {rut} no encontrado")
+            raise HTTPException(status_code=404, detail=detalle)
         return trabajador
 
     # ── Entregas (NUEVA / PERDIDA) ───────────────────────────────────────────
@@ -75,5 +77,7 @@ class EntregasService:
         return self.repo.get_entregas(rut, motivo, area_id, desde, hasta)
 
     def listar_vigentes(self, rut: str) -> List[Dict[str, Any]]:
-        self._get_trabajador(rut)
+        # Consulta de lectura: incluye desvinculados, que son justamente los que
+        # pueden tener EPP sin devolver.
+        self._get_trabajador(rut, solo_activos=False)
         return self.repo.get_vigentes_por_rut(rut)
