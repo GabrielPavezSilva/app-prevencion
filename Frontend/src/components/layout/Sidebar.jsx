@@ -44,6 +44,26 @@ const navItems = [
         ),
     },
     {
+        path: '/entregas',
+        label: 'Entregas',
+        modulo: 'entregas',
+        icon: (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+            </svg>
+        ),
+    },
+    {
+        path: '/importaciones',
+        label: 'Importar',
+        modulo: 'inventario',
+        icon: (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+            </svg>
+        ),
+    },
+    {
         path: '/personal',
         label: 'Personal',
         modulo: 'personal',
