@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List
 from sqlalchemy.orm import Session
 from app.schemas.personal import PersonalResponse, SyncEstado, SyncResumen
+from app.schemas.reportes import AreaCatalogo, SubAreaCatalogo
 from app.services.personal_service import PersonalService
 from app.services.personal_sync_service import PersonalSyncService
 from app.db.deps import get_mysql_db
@@ -59,6 +60,20 @@ async def sincronizar_personal(dry_run: bool = False,
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+
+
+@router.get("/areas", response_model=List[AreaCatalogo])
+async def get_areas(empresa_id: int = None, db: Session = Depends(get_mysql_db),
+                    _: dict = Depends(get_current_user)):
+    """Catálogo de áreas (pobla los filtros de reportes y dashboard)."""
+    return PersonalService(db).obtener_areas(empresa_id)
+
+
+@router.get("/subareas", response_model=List[SubAreaCatalogo])
+async def get_subareas(area_id: int = None, db: Session = Depends(get_mysql_db),
+                       _: dict = Depends(get_current_user)):
+    """Catálogo de subáreas, opcionalmente acotado a un área."""
+    return PersonalService(db).obtener_subareas(area_id)
 
 
 @router.get("/{rut}", response_model=PersonalResponse)

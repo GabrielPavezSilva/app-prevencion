@@ -74,3 +74,38 @@ class PersonalRepository:
         except Exception as e:
             logger.error(f"Error al buscar personal por RUT: {type(e).__name__}: {str(e)}")
             raise
+
+    # ── Catálogos organizacionales (Fase 5: pueblan los filtros de reportes) ──
+
+    def get_areas(self, empresa_id: int = None) -> List[dict]:
+        """
+        Áreas con su empresa. El nombre de área NO es único a nivel global
+        («Administración» existe en varias empresas), por eso se devuelve
+        siempre acompañado de la empresa para poder desambiguar en la UI.
+        """
+        sql = """
+            SELECT a.area_id, a.nombre_area, a.empresa_id, e.nombre_empresa
+            FROM areas a
+            LEFT JOIN empresa e ON e.empresa_id = a.empresa_id
+        """
+        params = {}
+        if empresa_id is not None:
+            sql += " WHERE a.empresa_id = :empresa_id"
+            params["empresa_id"] = empresa_id
+        sql += " ORDER BY e.nombre_empresa, a.nombre_area"
+        result = self.db.execute(text(sql), params).mappings().fetchall()
+        return [dict(row) for row in result]
+
+    def get_subareas(self, area_id: int = None) -> List[dict]:
+        sql = """
+            SELECT s.subarea_id, s.nombre_subarea, s.area_id, a.nombre_area
+            FROM subareas s
+            LEFT JOIN areas a ON a.area_id = s.area_id
+        """
+        params = {}
+        if area_id is not None:
+            sql += " WHERE s.area_id = :area_id"
+            params["area_id"] = area_id
+        sql += " ORDER BY a.nombre_area, s.nombre_subarea"
+        result = self.db.execute(text(sql), params).mappings().fetchall()
+        return [dict(row) for row in result]

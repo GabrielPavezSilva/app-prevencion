@@ -17,6 +17,10 @@ class EntregaLinea(BaseModel):
     motivo: str = "NUEVA"                 # NUEVA | PERDIDA
     observacion: Optional[str] = None
     uuid: Optional[str] = None            # idempotencia offline (D3)
+    # Solo para motivo PERDIDA: cuál entrega vigente se dio por perdida. Sin
+    # esto, el EPP perdido sigue contando como vigente junto a su reposición y
+    # el reporte general muestra dos cascos donde hay uno (Fase 5, Q6).
+    entrega_reemplazada_id: Optional[int] = None
 
 
 class EntregaCreate(BaseModel):

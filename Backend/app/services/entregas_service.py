@@ -47,6 +47,12 @@ class EntregasService:
                     detail=f"Motivo '{linea['motivo']}' inválido en entrega directa "
                            f"(use {' o '.join(MOTIVOS_ENTREGA)}; para daño use /sustitucion)",
                 )
+            if linea.get("entrega_reemplazada_id") is not None and linea["motivo"] != "PERDIDA":
+                raise HTTPException(
+                    status_code=400,
+                    detail="Solo una línea con motivo PERDIDA puede vincular la entrega "
+                           "que se dio por perdida",
+                )
             self._validar_producto_talla(linea["producto_id"], linea.get("talla_id"))
         try:
             return self.repo.crear_entregas(trabajador, lineas, usuario_id)

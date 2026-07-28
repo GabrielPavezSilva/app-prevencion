@@ -77,7 +77,7 @@ const AppRoutes = () => {
         path="/"
         element={
           <ProtectedRoute requiredModule="dashboard">
-            <Layout title="Panel de Control General" subtitle="Métricas de inventario y reportes en tiempo real.">
+            <Layout title="Panel de Control General" subtitle="Entregas de EPP, cobertura de personal y alertas de stock.">
               <Dashboard />
             </Layout>
           </ProtectedRoute>
@@ -127,7 +127,7 @@ const AppRoutes = () => {
         path="/reportes"
         element={
           <ProtectedRoute requiredModule="reportes">
-            <Layout title="Reportes" subtitle="Análisis y reportes detallados.">
+            <Layout title="Reportes" subtitle="Trazabilidad de entregas, EPP vigentes por trabajador y estado del stock.">
               <Reports />
             </Layout>
           </ProtectedRoute>

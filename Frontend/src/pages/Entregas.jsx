@@ -32,6 +32,10 @@ const TabRegistrar = () => {
   const [addTalla, setAddTalla] = useState("");
   const [addCant, setAddCant] = useState("1");
   const [addMotivo, setAddMotivo] = useState("NUEVA");
+  // Solo para PERDIDA: qué entrega vigente se dio por perdida. Sin vincularla,
+  // el EPP perdido sigue contando como vigente junto a su reposición y el
+  // reporte general muestra dos donde hay uno.
+  const [addReemplaza, setAddReemplaza] = useState("");
 
   const [vigentes, setVigentes] = useState([]);
   const [loadingVig, setLoadingVig] = useState(false);
@@ -89,11 +93,22 @@ const TabRegistrar = () => {
     [productos, addProd]
   );
 
+  // Vigentes que todavía se pueden dar por perdidos: se descuentan los que ya
+  // están vinculados por otra línea del carrito (el backend rechazaría el
+  // segundo intento, mejor no ofrecerlo).
+  const yaVinculadas = new Set(
+    carrito.map((l) => l.entrega_reemplazada_id).filter(Boolean)
+  );
+  const vigentesDisponibles = vigentes.filter((v) => !yaVinculadas.has(v.entrega_id));
+
   const agregarLinea = () => {
     if (!addProd) return toast.error("Selecciona un producto");
     if (prodSel?.talla_aplica && !addTalla) return toast.error("Este producto requiere talla");
     if (Number(addCant) <= 0) return toast.error("Cantidad inválida");
     const talla = tallas.find((t) => t.TallaID === Number(addTalla));
+    const reemplazada = addMotivo === "PERDIDA" && addReemplaza
+      ? vigentes.find((v) => v.entrega_id === Number(addReemplaza))
+      : null;
     setCarrito((c) => [...c, {
       producto_id: Number(addProd),
       nombre: prodSel.nombre,
@@ -101,8 +116,13 @@ const TabRegistrar = () => {
       nombre_talla: prodSel.talla_aplica ? talla?.nombreTalla : null,
       cantidad: Number(addCant),
       motivo: addMotivo,
+      entrega_reemplazada_id: reemplazada?.entrega_id ?? null,
+      reemplaza_label: reemplazada
+        ? itemLabel(reemplazada.nombre_producto, reemplazada.nombre_talla)
+        : null,
     }]);
-    setAddProd(""); setAddTalla(""); setAddCant("1"); setAddMotivo("NUEVA");
+    setAddProd(""); setAddTalla(""); setAddCant("1");
+    setAddMotivo("NUEVA"); setAddReemplaza("");
   };
 
   const quitarLinea = (i) => setCarrito((c) => c.filter((_, idx) => idx !== i));
@@ -116,6 +136,7 @@ const TabRegistrar = () => {
         lineas: carrito.map((l) => ({
           producto_id: l.producto_id, talla_id: l.talla_id,
           cantidad: l.cantidad, motivo: l.motivo,
+          entrega_reemplazada_id: l.entrega_reemplazada_id,
         })),
       });
       toast.success(`Entrega registrada (${carrito.length} ítem${carrito.length > 1 ? "s" : ""})`);
@@ -207,10 +228,32 @@ const TabRegistrar = () => {
                 <div style={{ display: "flex", gap: 8 }}>
                   <input className="modal-input" type="number" min="1" value={addCant}
                     onChange={(e) => setAddCant(e.target.value)} style={{ width: 90 }} title="Cantidad" />
-                  <select className="modal-input" value={addMotivo} onChange={(e) => setAddMotivo(e.target.value)}>
+                  <select className="modal-input" value={addMotivo}
+                    onChange={(e) => { setAddMotivo(e.target.value); setAddReemplaza(""); }}>
                     {MOTIVOS.map((m) => <option key={m.v} value={m.v}>{m.label}</option>)}
                   </select>
                 </div>
+
+                {addMotivo === "PERDIDA" && (
+                  <div>
+                    <select className="modal-input" value={addReemplaza}
+                      onChange={(e) => setAddReemplaza(e.target.value)}
+                      disabled={vigentesDisponibles.length === 0}>
+                      <option value="">— ¿Qué EPP se perdió? (opcional) —</option>
+                      {vigentesDisponibles.map((v) => (
+                        <option key={v.entrega_id} value={v.entrega_id}>
+                          {itemLabel(v.nombre_producto, v.nombre_talla)} · {new Date(v.fecha_entrega).toLocaleDateString("es-CL")}
+                        </option>
+                      ))}
+                    </select>
+                    <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 6, lineHeight: 1.45 }}>
+                      {vigentesDisponibles.length === 0
+                        ? "Este trabajador no tiene EPP vigentes para dar de baja."
+                        : "Si no lo indicas, el EPP perdido seguirá figurando como vigente junto a esta reposición."}
+                    </p>
+                  </div>
+                )}
+
                 <button className="catalogo-btn catalogo-btn--edit" onClick={agregarLinea}>+ Agregar al carrito</button>
               </div>
 
@@ -223,6 +266,11 @@ const TabRegistrar = () => {
                     }}>
                       <span>{itemLabel(l.nombre, l.nombre_talla)} × {l.cantidad}
                         <span style={{ color: "var(--color-text-muted)", fontSize: 12 }}> · {MOTIVOS.find(m => m.v === l.motivo)?.label}</span>
+                        {l.reemplaza_label && (
+                          <span style={{ display: "block", color: "var(--color-text-muted)", fontSize: 12 }}>
+                            da de baja: {l.reemplaza_label}
+                          </span>
+                        )}
                       </span>
                       <button className="catalogo-btn catalogo-btn--delete" onClick={() => quitarLinea(i)}>Quitar</button>
                     </div>

@@ -15,3 +15,9 @@ class PersonalService:
 
     def obtener_por_rut(self, rut: str):
         return self.repository.get_by_rut(rut)
+
+    def obtener_areas(self, empresa_id: int = None) -> List[dict]:
+        return self.repository.get_areas(empresa_id)
+
+    def obtener_subareas(self, area_id: int = None) -> List[dict]:
+        return self.repository.get_subareas(area_id)

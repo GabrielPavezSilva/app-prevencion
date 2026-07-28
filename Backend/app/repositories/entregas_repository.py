@@ -138,7 +138,14 @@ class EntregasRepository:
 
     def crear_entregas(self, trabajador: Dict[str, Any], lineas: List[Dict[str, Any]],
                        usuario_id: Optional[int]) -> List[Dict[str, Any]]:
-        """Carrito de N líneas (motivos NUEVA/PERDIDA) en una sola transacción."""
+        """
+        Carrito de N líneas (motivos NUEVA/PERDIDA) en una sola transacción.
+
+        Una línea PERDIDA puede vincular la entrega que se dio por perdida
+        (`entrega_reemplazada_id`): así deja de contar como vigente. No genera
+        BAJA_DANO — el ítem perdido no vuelve al bodegón y su stock ya se
+        descontó cuando se entregó.
+        """
         try:
             creadas: List[int] = []
             for linea in lineas:
@@ -148,6 +155,9 @@ class EntregasRepository:
                     if existente:
                         creadas.append(existente)   # idempotencia offline
                         continue
+                reemplazada_id = linea.get("entrega_reemplazada_id")
+                if reemplazada_id is not None:
+                    self.get_entrega_reemplazable(reemplazada_id, trabajador["rut"])
                 entrega_id = self._insertar_entrega(
                     trabajador=trabajador,
                     producto_id=linea["producto_id"],
@@ -157,6 +167,7 @@ class EntregasRepository:
                     usuario_id=usuario_id,
                     observacion=linea.get("observacion"),
                     uuid=uuid,
+                    entrega_reemplazada_id=reemplazada_id,
                 )
                 creadas.append(entrega_id)
             self.db.commit()
