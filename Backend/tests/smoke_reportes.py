@@ -160,6 +160,24 @@ fecha_local = next(r for r in julio if r["entrega_id"] == e_beto[0]["entrega_id"
 check("fecha convertida a hora de Chile", fecha_local.day == 31 and fecha_local.hour == 22,
       str(fecha_local))
 
+# El check anterior usa un timestamp literal, así que no toca el camino de
+# escritura. Este sí: `fecha_entrega` se llena con el server_default now(), y
+# guardar un timestamptz en una columna naive convierte según la zona de la
+# SESIÓN. Si la sesión no está fijada en UTC, el mismo instante se guarda
+# distinto según cómo esté configurado el servidor (el contenedor de desarrollo
+# corre en UTC; el compose de producción, en America/Santiago) y el reporte sale
+# corrido 4 horas. Se compara contra el propio reloj de la BD: now() es
+# timestamptz, así que `AT TIME ZONE 'America/Santiago'` da la hora local
+# correcta sea cual sea la zona de la sesión.
+recien = entregas.crear_entregas(beto, [
+    {"producto_id": 3, "talla_id": None, "cantidad": 1, "motivo": "NUEVA"},
+], None)
+esperado = escalar(db, "SELECT now() AT TIME ZONE 'America/Santiago'")
+fila = next(r for r in svc.trazabilidad({}) if r["entrega_id"] == recien[0]["entrega_id"])
+desfase = abs((fila["fecha_entrega"] - esperado).total_seconds())
+check("una entrega recién creada se reporta en la hora local correcta",
+      desfase < 120, f"desfase de {desfase / 3600:.1f} h — ¿la sesión de BD no está en UTC?")
+
 seccion("5. R1 — Trazabilidad")
 todas = svc.trazabilidad({})
 check("una fila por entrega",

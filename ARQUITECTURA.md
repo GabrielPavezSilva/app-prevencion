@@ -1,24 +1,59 @@
-# Guía de Arquitectura — Sistema de Lavandería Industrial
+# Guía de Arquitectura — Prevención EPP
 
-Esta guía está pensada para alguien que llega al proyecto por primera vez y necesita entender qué hace cada parte, cómo se comunican y por qué están organizadas así.
+Esta guía está pensada para alguien que llega al proyecto por primera vez y necesita entender qué hace cada parte, cómo se comunican y **por qué** están organizadas así.
+
+Para el detalle operativo (comandos, convenciones al escribir código, landmines) mirá `CLAUDE.md`. Este documento explica el sistema; ese otro explica cómo trabajar en él.
 
 ---
 
 ## ¿Qué es este sistema?
 
-Es una aplicación web para gestionar el inventario de prendas de una lavandería industrial. Las prendas tienen chips RFID físicos que permiten identificarlas, asignarlas a trabajadores y registrar devoluciones. El sistema también gestiona personal, genera reportes y tiene un portal diferenciado para operarios.
+Una aplicación web para gestionar los **Elementos de Protección Personal (EPP)** de una empresa: cascos, calzado de seguridad, guantes, protección auditiva, y demás.
+
+El problema que resuelve tiene tres partes:
+
+1. **Saber qué hay en bodega.** Stock por producto y talla, con alertas cuando algo baja del mínimo.
+2. **Saber quién tiene qué.** Cada entrega queda registrada contra un trabajador, con su motivo.
+3. **Poder demostrarlo.** Prevención de riesgos necesita reportar qué EPP tiene cada persona y desde cuándo. Antes de este sistema, las pérdidas de EPP se manejaban por correo electrónico; esa trazabilidad era el requisito número uno del negocio.
+
+El sistema **no** maneja unidades individuales identificadas: no hay un número de serie por casco. Maneja **cantidades** por producto y talla. Esa decisión define todo el modelo de datos.
 
 ---
 
-## Estructura General del Repositorio
+## De dónde viene (contexto importante)
+
+Este repositorio es un **fork de un sistema de lavandería industrial** del mismo autor, reconvertido por fases.
+
+La lavandería gestionaba prendas individuales con **chips RFID**, leídas por lectores UHF conectados por puerto serial, con identificación de operarios por **huella dactilar** (DigitalPersona U.are.U 4500) y un portal separado para trabajadores.
+
+**Todo eso fue eliminado.** No hay hardware, ni RFID, ni biometría, ni portal de operarios. Si te cruzás con `lecturas_rfid`, `asignaciones`, `tiposPrendas`, `secciones` o `temporadas`, estás mirando restos que todavía no se barrieron — `CLAUDE.md` tiene la lista completa de lo que corresponde borrar.
+
+Vale la pena tenerlo presente porque explica varias rarezas que de otro modo parecen decisiones arbitrarias:
+
+- El archivo de sesión de base de datos se llama `session_mysql.py` y la dependencia `get_mysql_db()`, pero la base es PostgreSQL. Es herencia del fork; renombrarlo tocaría cada endpoint.
+- Todos los modelos ORM viven en `app/models/inventario.py`, un nombre que ya no describe su contenido.
+- Existen `Sidebar.jsx` y `TopNav.jsx`: la navegación real es la segunda.
+
+---
+
+## Estructura del repositorio
 
 ```
-app-lavanderia/
-├── Backend/          # Servidor Python / FastAPI
-├── Frontend/         # Aplicación web React / Vite
-├── SQL/              # Script DDL para crear la base de datos MySQL
-├── CLAUDE.md         # Instrucciones para Claude Code
-└── ARQUITECTURA.md   # Este archivo
+app-prevencion/
+├── Backend/          Servidor Python / FastAPI
+│   ├── app/          Código de la aplicación (ver abajo)
+│   ├── tests/        Smoke tests y seeds de demostración
+│   ├── main.py       Punto de entrada
+│   ├── seed_admin.py / seed_modulos.py
+│   └── sync_personal.py   CLI del sync con RRHH
+├── Frontend/         Aplicación web React / Vite
+├── docs/             Runbooks y planes de diseño por fase
+├── SQL/              Scripts del dominio viejo — OBSOLETOS
+├── airflow/          DAGs
+├── nginx/            Configuración del reverse proxy
+├── compose.yml       Despliegue en el VPS
+├── CLAUDE.md         Guía de trabajo para agentes
+└── ARQUITECTURA.md   Este archivo
 ```
 
 ---
@@ -26,672 +61,333 @@ app-lavanderia/
 ## Cómo se comunican las partes
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                    Navegador del usuario                  │
-│                                                          │
-│   React SPA (Frontend - puerto 5173)                     │
-│   └── Llama al backend via HTTP (fetch/JSON)             │
-└──────────────────┬───────────────────────────────────────┘
-                   │ HTTP REST (JSON)
-                   ▼
-┌──────────────────────────────────────────────────────────┐
-│              FastAPI Backend (puerto 8000)                │
-│   /api/auth  /api/inventario  /api/rfid  /api/stats      │
-│   └── Accede a MySQL via SQLAlchemy ORM                  │
-└──────────────────┬───────────────────────────────────────┘
-                   │ SQL
-                   ▼
-┌──────────────────────────────────────────────────────────┐
-│               MySQL (base de datos)                      │
-│   usuarios, personal, lecturas_rfid, asignaciones, ...   │
-└──────────────────────────────────────────────────────────┘
-                   ▲                    ▲
-                   │ COM2 (Recepción)    │ COM3 (Asignación)
-┌──────────────────┴────────────────────┴─────────────────┐
-│           Lectores RFID UHF (hardware físico)            │
-│   Lector Recepción  → WorkerDashboard "Recibir"          │
-│   Lector Asignación → WorkerDashboard "Asignar" +        │
-│                        InventoryMode                     │
-└──────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│                Navegador del usuario                 │
+│  React SPA (Vite, puerto 5173 en desarrollo)         │
+│  └── fetch con credentials: 'include'                │
+└───────────────────────┬──────────────────────────────┘
+                        │  HTTP REST (JSON)
+                        │  cookie httpOnly `authToken`
+                        ▼
+┌──────────────────────────────────────────────────────┐
+│            FastAPI Backend (puerto 8000)             │
+│  /api/auth  /api/epp  /api/entregas  /api/personal   │
+│  /api/reportes  /api/stats  /api/importaciones  ...  │
+└───────────────────────┬──────────────────────────────┘
+                        │  SQL (SQLAlchemy, text() crudo)
+          ┌─────────────┴─────────────┐
+          ▼                           ▼
+┌───────────────────┐      ┌────────────────────────────┐
+│   PostgreSQL      │      │  Base RRHH `rh_cramer`     │
+│   db_prevencion   │      │  (solo lectura)            │
+│                   │      │  fuente de verdad de la    │
+│  productos_epp    │      │  nómina; se sincroniza a   │
+│  stock_epp        │◄─────┤  `personal` una vez al día │
+│  movimientos_stock│ sync └────────────────────────────┘
+│  entregas_epp     │
+│  personal  ...    │
+└───────────────────┘
 ```
 
-El frontend nunca habla directamente con la base de datos ni con el hardware. Todo pasa por el backend.
+El frontend nunca habla con la base de datos. Todo pasa por el backend. **No hay hardware en el circuito.**
 
 ---
 
-## BACKEND
+## Backend
 
 ### Punto de entrada: `Backend/main.py`
 
-Es el archivo que arranca todo. Al iniciarse:
+Al arrancar:
 
-1. Importa todos los modelos ORM para que SQLAlchemy los conozca.
-2. Crea automáticamente las tablas en MySQL si no existen (`Base.metadata.create_all`).
-3. Configura CORS para permitir que el frontend (en `localhost:5173`) pueda hacer peticiones.
-4. Monta el router principal bajo el prefijo `/api`.
+1. Importa `app.models.inventario` para que SQLAlchemy registre los modelos.
+2. Crea las tablas que falten (`Base.metadata.create_all`). Es idempotente, pero **no es un sistema de migraciones**: si cambiás una columna de una tabla que ya existe, el cambio no se aplica solo.
+3. Configura CORS (localhost para desarrollo, más lo que venga en `CORS_ORIGINS`).
+4. Monta rate limiting con slowapi.
+5. Monta el router principal bajo `/api`.
+6. En producción (`ENVIRONMENT=production`) apaga `/docs`, `/redoc` y `/openapi.json`.
 
-```bash
-# Para correr el backend en modo desarrollo:
-cd Backend
-uvicorn main:app --reload --port 8000
-```
-
----
-
-### Arquitectura interna del Backend
-
-El backend sigue el patrón **Clean Architecture con Repository Pattern**:
+### Las tres capas
 
 ```
 Petición HTTP
      │
      ▼
 ┌─────────────┐
-│  Endpoint   │  app/api/v1/endpoints/  → Recibe la petición, valida con Pydantic, llama al servicio
-└──────┬──────┘
-       │
+│  Endpoint   │  app/api/v1/endpoints/   Recibe, valida con Pydantic, delega.
+└──────┬──────┘                          No sabe SQL.
        ▼
 ┌─────────────┐
-│   Service   │  app/services/          → Lógica de negocio (reglas, validaciones, orquestación)
-└──────┬──────┘
-       │
+│   Service   │  app/services/           Reglas de negocio, validaciones,
+└──────┬──────┘                          orquestación. Traduce errores de
+       │                                 negocio a HTTPException.
        ▼
 ┌─────────────┐
-│ Repository  │  app/repositories/      → Acceso a datos (SQL puro con sqlalchemy.text())
-└──────┬──────┘
-       │
+│ Repository  │  app/repositories/       Acceso a datos. SQL crudo con
+└──────┬──────┘                          sqlalchemy.text(). No sabe de reglas.
        ▼
-┌─────────────┐
-│    MySQL    │  Tablas reales en la base de datos
-└─────────────┘
+   PostgreSQL
 ```
 
-**Excepción conocida:** El endpoint `inventario.py` llama al `CatalogosRepository` directamente, sin pasar por una capa de service. Esto es funcional pero rompe la separación estricta.
+**¿Por qué SQL crudo y no el ORM?** Los modelos existen para crear el esquema y documentarlo, pero las consultas reales son agregaciones con varios JOIN y CTEs que en la query API del ORM quedan ilegibles. La regla es consistente: **los repositorios usan `text()`**.
 
-**¿Por qué esta separación?**
-- Los endpoints no saben nada de SQL; solo reciben y envían JSON.
-- Los repositorios no saben nada de reglas de negocio; solo ejecutan consultas.
-- Si mañana cambia la base de datos, solo se toca el repositorio.
+**¿Por qué la separación?** Porque las reglas del dominio EPP son transaccionales y no triviales (ver "Invariantes"). Tenerlas en un solo lugar, sin mezclar con SQL ni con serialización HTTP, es lo que permite testearlas sin levantar el servidor.
+
+### Módulos
+
+| Carpeta | Contenido |
+|---|---|
+| `app/core/` | `config.py` (settings vía pydantic-settings), `security.py` (JWT, permisos), `logging_config.py` |
+| `app/db/` | `session.py` (Base declarativa), `session_mysql.py` (engine principal), `session_employees.py` (conexión de solo lectura a RRHH), `deps.py` (`get_mysql_db`) |
+| `app/models/` | `inventario.py` — todos los modelos ORM |
+| `app/schemas/` | Modelos Pydantic de request/response |
+| `app/repositories/` | Acceso a datos |
+| `app/services/` | Lógica de negocio; además `excel_builder.py`, que es infraestructura pura |
+| `app/api/v1/` | `api.py` arma el router; `endpoints/` los define |
 
 ---
 
-### Módulos del Backend
+## El modelo de datos
 
-#### `app/core/` — Configuración y utilidades globales
+Es el corazón del sistema. Vale la pena entenderlo antes de tocar nada.
 
-| Archivo | Qué hace |
-|---------|----------|
-| `config.py` | Lee variables de entorno desde `Backend/.env` usando Pydantic Settings. Define la URL de conexión a MySQL. |
-| `security.py` | Genera y valida tokens JWT. El token contiene `userId`, `username` y `role`. Expira en 8 horas. |
-| `logging_config.py` | Logger global llamado `"lavanderia"`, nivel INFO, salida a consola. |
+### Catálogo y existencias
 
-**Variables de entorno requeridas (`Backend/.env`):**
 ```
-DB_SERVER_MYSQL=localhost
-DB_PORT_MYSQL=3306
-DB_USER_MYSQL=root
-DB_PASSWORD_MYSQL=tu_password
-DB_NAME_MYSQL=db_lavanderia
-JWT_SECRET_KEY=una_clave_secreta_larga
-RFID_RECEPTION_PORT=COM2    # Lector de Recepción (WorkerDashboard "Recibir")
-RFID_ASSIGNMENT_PORT=COM3   # Lector de Asignación + InventoryMode
-RFID_BAUDRATE=57600
+categorias_epp ──< productos_epp ──< stock_epp >── tallas
+                          │              │
+                          └──────────────┴──< movimientos_stock
 ```
-Ver `Backend/.env.example` para la plantilla completa documentada.
+
+- **`productos_epp`** es el *catálogo*: una fila por tipo de EPP ("Casco de seguridad"), no por unidad física. `talla_aplica` define si ese producto se maneja por talla.
+- **`stock_epp`** son las *existencias*: una fila por combinación producto + talla. Para productos sin talla, `talla_id` es `NULL`.
+- **`movimientos_stock`** es el *libro mayor*: cada cambio de existencias deja un asiento con su tipo y su referencia.
+
+El stock es **global**: un solo bodegón, sin segregar por empresa, aunque el sistema es multiempresa. La empresa solo importa a la hora de reportar quién recibió qué.
+
+### Entregas
+
+```
+personal ──< entregas_epp >── productos_epp
+                 │
+                 └── entrega_reemplazada_id ──┐
+                      (auto-referencia)  ◄────┘
+```
+
+`entregas_epp` denormaliza `nombre_completo` y `empresa_id` al momento de la entrega. No es redundancia por descuido: si un trabajador cambia de empresa o se corrige su nombre, el historial debe seguir diciendo lo que decía cuando se firmó.
+
+La auto-referencia `entrega_reemplazada_id` es lo que permite encadenar reposiciones y sustituciones sin una tabla aparte.
+
+### Organización
+
+```
+empresa ──< areas ──< subareas ──< personal
+```
+
+Espejo de la jerarquía de RRHH, vinculado por `origen_id`. Dos sutilezas que costaron encontrar:
+
+- El nombre de área **no** es único a nivel global: hay "Administración" y "Operaciones" en varias empresas. Por eso el UNIQUE es `(nombre_area, empresa_id)`. Con un UNIQUE solo sobre el nombre, las áreas de empresas distintas se fusionaban y los reportes por área sumaban empresas.
+- La identidad estable de una subárea es `origen_id`, no su nombre: el mismo nombre se repite incluso dentro de una empresa bajo áreas distintas.
 
 ---
 
-#### `app/db/` — Conexión a la base de datos
+## Invariantes
 
-| Archivo | Qué hace |
-|---------|----------|
-| `session_mysql.py` | Crea el motor SQLAlchemy y la fábrica de sesiones `MysqlSessionLocal`. |
-| `deps.py` | Define `get_mysql_db()`: generador que FastAPI inyecta en los endpoints con `Depends(get_mysql_db)`. Abre una sesión, la entrega y la cierra al terminar (patrón context manager). |
+Son las reglas que el sistema mantiene siempre. Romperlas corrompe datos de forma silenciosa.
 
----
+### El stock es un libro mayor
 
-#### `app/models/inventario.py` — Modelos ORM
-
-**Todos los modelos están en un único archivo.** Cada clase Python representa una tabla en MySQL:
-
-| Clase ORM | Tabla MySQL | Propósito |
-|-----------|-------------|-----------|
-| `Rol` | `roles` | Roles de usuario (admin, worker) |
-| `Usuario` | `usuarios` | Cuentas de acceso al sistema |
-| `Personal` | `personal` | Empleados de la lavandería (RUT como PK) |
-| `Area` / `SubArea` | `areas` / `subareas` | Catálogo de áreas organizacionales |
-| `Empresa` | `empresa` | Catálogo de empresas cliente |
-| `TipoPrenda` | `tiposPrendas` | Catálogo de tipos (ej: "Pantalón Blanco") |
-| `Talla` | `tallas` | Catálogo de tallas (S, M, L, XL…) |
-| `LecturaRFID` | `lecturas_rfid` | **Inventario real de prendas físicas** (una fila = una prenda) |
-| `Asignacion` | `asignaciones` | Historial de entregas y devoluciones |
-
-**Nota importante:** La tabla `lecturas_rfid` tiene doble propósito: es el inventario de prendas Y el log de lecturas RFID. Cada prenda tiene un `sku` único y puede tener un `tag_epc` (EPC del chip RFID).
-
----
-
-#### `app/schemas/` — Validación con Pydantic
-
-Los schemas definen qué datos acepta y devuelve cada endpoint. FastAPI los usa automáticamente para:
-- Validar el cuerpo de las peticiones entrantes.
-- Serializar la respuesta saliente.
-- Generar la documentación Swagger en `/docs`.
-
-| Archivo | Schemas principales |
-|---------|---------------------|
-| `auth.py` | `LoginRequest` (`username` + `contrasena`), `LoginResponse` (`token` + `user`), `UserResponse` |
-| `inventario.py` | `InventarioResponse` (con nombre de tipo, talla y empresa) |
-| `tipos_prendas.py` | `TiposPrendasCreate`, `TiposPrendasUpdate`, `TiposPrendasResponse` |
-| `tallas.py` | `TallasCreate`, `TallasUpdate`, `TallasResponse` |
-| `rfid.py` | Schemas para cada operación RFID (escaneo, escritura, modo inventario…) |
-| `stats.py` | `InventarioStatsResponse` (KPIs del dashboard) |
-| `personal.py` | `PersonalResponse` |
-| `asignaciones.py` | `AsignacionesResponse` |
-
-**Importante — campo de login:** El campo de contraseña en `LoginRequest` es `contrasena` (no `password`). El frontend (`authService.js`) envía `{ username, contrasena }`.
-
----
-
-#### `app/repositories/` — Acceso a datos
-
-Los repositorios ejecutan SQL con `sqlalchemy.text()` (SQL nativo, no ORM de alto nivel). Reciben una sesión de base de datos y retornan datos crudos o None.
-
-| Repositorio | Responsabilidad |
-|-------------|----------------|
-| `auth_repository.py` | Buscar usuario por `nombre_completo` (campo de username) con JOIN usuarios+roles. También soporta búsqueda por correo. |
-| `inventario_repository.py` | CRUD de prendas en `lecturas_rfid` |
-| `catalogos_repository.py` | CRUD de `tiposPrendas` y `tallas`, incluyendo validación de uso |
-| `personal_repository.py` | Listar y buscar empleados con filtro LIKE |
-| `rfid_repository.py` | Operaciones RFID: vincular tags, buscar por EPC/SKU, gestionar inventario en sesión |
-| `asignaciones_repository.py` | Crear/finalizar asignaciones, cerrar asignaciones previas antes de crear una nueva |
-| `reportes_repository.py` | Consultas para generación de archivos Excel. También expone `get_inventario()` usado por `GET /rfid/lecturas` |
-
----
-
-#### `app/services/` — Lógica de negocio
-
-Los servicios orquestan repositorios y aplican reglas de negocio. Son los que "piensan".
-
-**`auth_service.py`:**
-Verifica la contraseña con bcrypt (con fallback a texto plano para desarrollo), genera el JWT y retorna el token con datos del usuario. Accede a `user["user_id"]`, `user["username"]` y `user["nombre_rol"]` del resultado del repositorio.
-
-**`catalogos_service.py`:**
-Valida que el nombre no esté vacío ni repetido. Al eliminar un tipo/talla, verifica que no tenga prendas vinculadas (HTTP 400 si las tiene).
-
-**`rfid_service.py`** — El más complejo:
-- Delega el hardware a `multi_reader_manager`; todos los métodos de hardware aceptan `role: str = "assignment"`.
-- `scan_tag(role)`: si el lector no responde, retorna `hardware_error=True` con el rol afectado (en lugar de lanzar excepción).
-- Implementa el **modo inventario**: mantiene una sesión activa con `tipo_id`, `talla_id` y un set de EPCs ya escaneados en esta sesión. Siempre usa el lector `"assignment"` internamente.
-- **Generación de SKU:** toma el nombre del tipo de prenda (ej: "Pantalón Blanco"), lo convierte a `PANTALON_BLANCO`, busca el último correlativo en BD y genera `PANTALON_BLANCO-0001`.
-- Lógica de **asignación vs recepción**: al recibir una lectura RFID con `accion: "ASIGNACION"`, crea un registro en `asignaciones`. Con `"RECEPCION"`, cierra la asignación activa.
-
-**`reportes_service.py`:**
-Usa `openpyxl` para construir archivos Excel en memoria (sin tocar disco). Devuelve un `BytesIO` que FastAPI transmite como `StreamingResponse`.
-
----
-
-#### `app/services/uhf_reader.py` — Hardware RFID
-
-Tres elementos exportados:
-
-**`UHFReader`:** Comunicación de bajo nivel con el lector UHF por puerto serial.
-- Implementa el protocolo binario del lector (comandos, CRC16, parsing de respuesta).
-- `inventario()` → escanea y devuelve EPC del tag más cercano.
-- `leer_user(epc, palabras)` → lee memoria USER del chip.
-- `escribir_user(epc, hex_data)` → escribe datos en el chip.
-
-**`VALID_ROLES`:** Constante de módulo `("reception", "assignment")`. Usada para validación en endpoints y service.
-
-**`MultiReaderManager`:** Gestiona dos lectores en paralelo.
-- Diccionario interno `{ "reception": UHFReader, "assignment": UHFReader }` inicializado con los puertos de configuración.
-- Cada rol tiene su propio `threading.Lock()` → recepción no bloquea a asignación y viceversa.
-- Conexión lazy: el lector se conecta al primer `scan()` si no está ya conectado.
-- Se exporta como `multi_reader_manager` (singleton de módulo).
-- Métodos principales: `scan(role)`, `status(role)`, `conectar(role)`, `desconectar(role)`, `leer_user(role, epc, palabras)`, `escribir_user(role, epc, hex_data)`.
-
----
-
-#### `app/services/biometria_manager.py` — Hardware Huella Digital
-
-**`BiometriaManager`:** Gestiona el lector U.are.U 4500 y las sesiones de captura.
-- Singleton exportado como `biometria_manager`. Patrón análogo a `MultiReaderManager`.
-- SDK: pythonnet + DPUruNet DLLs desde `C:\Program Files\DigitalPersona\U.are.U SDK\Windows\Lib\.NET` y `\x64`. Se carga al importar el módulo; si las DLLs no existen, opera en modo degradado (`conectado=False`).
-- **`pythonnet` debe estar instalado en el venv** (`pip install -r requirements.txt` lo cubre). Si solo está en el Python del sistema y no en el venv, el endpoint devuelve `{"conectado": false, "error": "No module named 'clr'"}`.
-- Sesiones en memoria (`_sesiones` dict) con TTL de 5 minutos y limpieza automática en thread daemon.
-- Callbacks de captura a nivel de módulo (limitación pythonnet: no acepta bound methods como delegates .NET).
-- Usos principales:
-  - `get_reader_status()` → `{ conectado, ocupado, error? }` — consulta `ReaderCollection.GetReaders()`.
-  - `iniciar_identificacion(templates_data)` → lanza thread, retorna `session_id`. 1 captura → comparación 1:N.
-  - `iniciar_enrolamiento(rut, nombre, save_callback)` → 4 capturas secuenciales → `Enrollment.CreateEnrollmentFmd()` → `save_callback(rut, bytes)`.
-
----
-
-#### `app/api/v1/endpoints/` — Endpoints HTTP
-
-El archivo `app/api/v1/api.py` registra todos los routers bajo `/api`:
-
-| Archivo | Prefijo | Endpoints principales | Estado |
-|---------|---------|----------------------|--------|
-| `auth.py` | `/api/auth` | `POST /login`, `POST /logout` | ✅ Registrado |
-| `inventario.py` | `/api/inventario` | CRUD de tipos y tallas | ✅ Registrado |
-| `personal.py` | `/api/personal` | `GET /todos?search=...` | ✅ Registrado |
-| `endpoints_rfid.py` | `/api/rfid` | Todo lo relacionado con RFID (ver abajo) | ✅ Registrado |
-| `stats.py` | `/api/stats` | `GET /inventario` (KPIs del dashboard) | ✅ Registrado |
-| `asignaciones.py` | `/api/asignaciones` | `GET /todas` | ✅ Registrado |
-| `biometria.py` | `/api/biometria` | Identificación y enrolamiento de huellas | ✅ Registrado |
-| `reportes.py` | *(sin prefijo aún)* | Generación de Excel | ❌ No registrado |
-
-**Sub-rutas de RFID (`/api/rfid`):**
+`stock_epp.cantidad_actual` **nunca** se edita directo. Cada cambio pasa por un `MovimientoStock` en la misma transacción, de modo que las existencias siempre se pueden reconstruir desde el historial.
 
 ```
-Log / Persistencia:
-  POST /lectura              → Registra lectura (asignación o recepción)
-  GET  /buscar/{epc}         → Busca prenda por EPC
-  POST /vincular             → Vincula EPC a SKU existente
-  GET  /log                  → Últimas N lecturas
-  GET  /lecturas             → Inventario completo desde lecturas_rfid (para tablas del frontend)
-
-Hardware del lector (todos aceptan ?role=reception|assignment, default: assignment):
-  GET  /reader/status        → Estado de conexión del lector indicado
-  POST /reader/connect       → Conectar al lector indicado
-  POST /reader/disconnect    → Desconectar el lector indicado
-  POST /reader/scan          → Escanear un tag con el lector indicado
-  GET  /reader/read/{epc}    → Leer memoria USER del tag
-  POST /reader/write         → Escribir SKU en tag y vincularlo en BD
-
-  Respuesta de /reader/scan incluye:
-    { encontrado, epc?, sku?, hardware_error, hardware_role? }
-    hardware_error=true indica que el lector físico no responde
-
-Modo Inventario (escaneo masivo, siempre usa lector "assignment"):
-  POST /inventario/iniciar   → Iniciar sesión de inventario
-  POST /inventario/detener   → Detener y obtener resumen
-  GET  /inventario/estado    → Estado actual de la sesión
-  POST /inventario/scan      → Escanear un tag (crea prenda si es nuevo)
-
-Modo Ajuste:
-  PATCH  /inventario/prenda/{sku}      → Cambiar tipo/talla de una prenda
-  DELETE /inventario/prenda/{sku}/tag  → Desvincular el chip RFID
+cantidad_actual = SUM(movimientos_stock.cantidad
+                      WHERE tipo IN ('INGRESO_IMPORT','ENTREGA','AJUSTE'))
 ```
+
+`BAJA_DANO` queda fuera de esa suma **a propósito**: documenta la baja de una unidad que ya estaba en terreno. Su stock se descontó cuando se entregó; volver a descontarlo sería contarlo dos veces.
+
+### Los productos sin talla son un caso especial
+
+En PostgreSQL `NULL = NULL` evalúa a `NULL`, no a verdadero. Por eso `UNIQUE(producto_id, talla_id)` **no** impide filas duplicadas cuando `talla_id` es `NULL`, que es justo el caso de todo producto sin talla.
+
+Todo lookup, upsert o join por (producto, talla) usa `talla_id IS NOT DISTINCT FROM :talla_id`, que sí trata `NULL` como igual a `NULL`. Es la clase de error que no falla: simplemente duplica filas de stock hasta que alguien nota que los números no cierran.
+
+### Las fechas se guardan en UTC y se reportan en hora de Chile
+
+`fecha_entrega` es `TIMESTAMP WITHOUT TIME ZONE` con `server_default=now()`. En PostgreSQL, guardar un `timestamptz` en una columna sin zona lo convierte **según la zona horaria de la sesión** — así que el mismo instante se almacena distinto según cómo esté configurado el servidor.
+
+Eso es un problema real acá: el contenedor de desarrollo corre en UTC y el `compose.yml` de producción arranca Postgres con `timezone=America/Santiago`. La misma entrega quedaría guardada con 4 horas de diferencia en cada entorno.
+
+La solución tiene dos mitades:
+
+1. **La conexión fija su zona en UTC** (`connect_args` en `session_mysql.py`). El almacenamiento es UTC en todos los entornos, sin importar cómo esté configurado el servidor.
+2. **La conversión a hora local ocurre en un solo lugar**, la constante `FECHA_LOCAL` de `reportes_repository.py`:
+
+```sql
+((e.fecha_entrega AT TIME ZONE 'UTC') AT TIME ZONE 'America/Santiago')
+```
+
+Sin esto, una entrega registrada el 31 a las 21:00 hora chilena cae en el mes siguiente y todo corte mensual queda mal. `tests/smoke_reportes.py` cubre ese borde y verifica que una entrega recién creada se reporte en la hora local correcta.
+
+### "EPP vigente" tiene una definición y una sola
+
+Un EPP está vigente si su entrega no fue reemplazada por otra posterior:
+
+```sql
+NOT EXISTS (SELECT 1 FROM entregas_epp r WHERE r.entrega_reemplazada_id = e.entrega_id)
+```
+
+Está escrito igual en tres repositorios (`entregas`, `personal`, `reportes`). Si el criterio cambia, hay que cambiarlo en los tres o las pantallas empiezan a contradecirse.
 
 ---
 
-## BASE DE DATOS
+## Los flujos
 
-### Diagrama de tablas
+### Entrega de EPP
 
-```
-roles ──────────────── usuarios
-                           │
-                           │ (autenticación por nombre_completo)
+La página Entregas resuelve todo en una pantalla:
 
-modulos ────────────── roles_modulos (permisos por rol)
+1. Se busca al trabajador por nombre o RUT.
+2. Se arma un **carrito** de líneas: producto, talla si aplica, cantidad y **motivo por línea**.
+3. Al confirmar, el backend ejecuta **una sola transacción**: N filas en `entregas_epp`, N movimientos `ENTREGA` y el descuento de stock. Si alguna línea no tiene existencias suficientes, **se revierte el carrito completo** — no queda media entrega registrada.
 
-areas ──┐
-         ├── personal (rut PK)
-subareas─┘       │
-                  │
-tallas ───────────┼────────── lecturas_rfid (sku UNIQUE)
-                  │                │
-tiposPrendas ─────────────────────┘
-                                   │
-empresa ───────────────────────────┘
-                  │
-                  └──────── asignaciones
-                               (rut FK, sku, tag_epc, fecha_entrega, fecha_devolucion)
-```
+Los tres motivos:
 
-### Esquema completo de tablas
+| Motivo | Qué significa | Stock | Vínculo |
+|---|---|---|---|
+| `NUEVA` | Primera entrega | Descuenta | — |
+| `PERDIDA` | Reposición de algo extraviado | Descuenta | Opcional: la entrega que se perdió |
+| `DANO` | Sustitución de algo roto | Descuenta | Obligatorio: la entrega que se reemplaza |
 
-#### `roles`
-| Columna | Tipo | Restricciones |
-|---------|------|---------------|
-| `rol_id` | INT AUTO_INCREMENT | PRIMARY KEY |
-| `nombre_rol` | VARCHAR(50) | NOT NULL, UNIQUE |
+`DANO` solo se registra por `POST /entregas/sustitucion`, que además genera el movimiento `BAJA_DANO`. `POST /entregas` rechaza ese motivo: una sustitución sin saber qué sustituye no es trazable.
 
-#### `usuarios`
-| Columna | Tipo | Restricciones |
-|---------|------|---------------|
-| `user_id` | INT AUTO_INCREMENT | PRIMARY KEY |
-| `nombre_completo` | VARCHAR(100) | NOT NULL, UNIQUE — **es el campo de username para login** |
-| `correo` | VARCHAR(100) | NOT NULL, UNIQUE |
-| `contrasena` | VARCHAR(255) | NOT NULL — hash bcrypt |
-| `rol_id` | INT | FK → roles(rol_id) |
-| `activo` | BIT | DEFAULT 1 |
-| `creado_en` | DATETIME | DEFAULT CURRENT_TIMESTAMP |
-| `ultimo_login` | DATETIME | DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP |
+`PERDIDA` acepta el vínculo pero no lo exige, y no genera `BAJA_DANO` — el ítem perdido no vuelve a bodega. **Conviene informarlo igual**: sin el vínculo, el EPP perdido sigue contando como vigente al lado de su reposición, y el reporte general muestra dos cascos donde hay uno.
 
-#### `modulos` y `roles_modulos`
-Tablas para control de acceso por módulo. `modulos` define módulos del sistema. `roles_modulos` asocia qué roles pueden acceder a qué módulos. **Actualmente no utilizadas por el backend.**
+No existe devolución de EPP sin reemplazo. Un trabajador desvinculado no puede recibir EPP nuevo, pero su historial se conserva y se puede consultar.
 
-#### `personal`
-| Columna | Tipo | Descripción |
-|---------|------|-------------|
-| `rut` | VARCHAR(20) | PRIMARY KEY |
-| `nombre_completo` | VARCHAR(100) | NOT NULL |
-| `empresa` | VARCHAR(100) | NOT NULL — texto libre, no FK |
-| `cargo` | VARCHAR(50) | NOT NULL |
-| `area_id` | INT | FK → areas |
-| `subarea_id` | INT | FK → subareas |
-| `talla_id` | INT | FK → tallas |
-| `huella_digital` | LONGBLOB | NULL — encoding facial biométrico |
+### Importación masiva
 
-#### `lecturas_rfid` — Tabla central del inventario
-Esta tabla es el corazón del inventario. Cada fila es una **prenda física**:
+Para la carga inicial y la migración desde el software anterior. Cada plantilla (`productos_epp`, `stock_inicial`, `ingreso_stock`, `entregas_historicas`) declara sus columnas en `app/schemas/templates.py`.
 
-| Columna | Tipo | Descripción |
-|---------|------|-------------|
-| `id_lectura` | INT PK | Identificador interno |
-| `tag_epc` | VARCHAR(50) | EPC del chip RFID |
-| `sku` | VARCHAR(100) UNIQUE | Código único de la prenda (ej: `PANTALON_BLANCO-0042`) |
-| `tipo_id` | INT | FK → tiposPrendas |
-| `talla_id` | INT | FK → tallas |
-| `accion` | VARCHAR(50) | Última acción registrada (ej: `INVENTARIO`, `ASIGNACION`, `RECEPCION`) |
-| `resultado` | VARCHAR(50) | Resultado de la acción |
-| `estado_disponible` | BIT | 1 = disponible, 0 = asignada |
-| `empresa_id` | INT | FK → empresa |
-| `hora` | DATETIME | DEFAULT CURRENT_TIMESTAMP |
+El importador procesa **cada fila en su propio savepoint**: una fila mala no aborta el lote, se acumula en el reporte de errores y el resto entra. Cada corrida deja una fila en `importaciones` con el conteo y el detalle.
 
-#### `asignaciones`
-Historial completo de entregas y devoluciones:
+`entregas_historicas` inserta con la fecha original y **no toca el stock actual**: son entregas que ya ocurrieron, su stock ya se consumió en el sistema anterior.
 
-| Columna | Descripción |
-|---------|-------------|
-| `asignacion_id` | PK auto-increment |
-| `rut` | FK → personal |
-| `nombre_completo` | Denormalizado (preserva nombre aunque el empleado cambie) |
-| `sku` | Prenda entregada |
-| `tag_epc` | EPC del chip al momento de la asignación |
-| `fecha_entrega` | Cuándo se entregó |
-| `fecha_devolucion` | NULL si aún no fue devuelta |
+### Sincronización de personal
+
+RRHH (`rh_cramer`) es la **fuente de verdad** de la nómina. El sync pisa todos los campos y **desactiva** (nunca borra) a quien sale de la nómina, para no perder su historial de entregas. La página Personal es de solo lectura por eso mismo: editarla ahí sería mentirle al próximo sync.
+
+Corre a diario de forma automática y también a demanda desde la UI. Detalle completo en `docs/runbook-sync-personal.md`.
+
+### Reportabilidad
+
+Tres reportes, cada uno con una pregunta de negocio detrás:
+
+| Reporte | Pregunta |
+|---|---|
+| **Trazabilidad de entregas** | ¿Qué se entregó, a quién, cuándo y por qué? Filtrable por motivo, área, fecha, producto y trabajador |
+| **EPP vigentes por trabajador** | ¿Qué tiene cada persona hoy? Incluye a quienes **no** tienen nada, que suele ser la mitad más útil |
+| **Stock y quiebres** | ¿Qué hay que comprar? Con consumo del período y cobertura estimada en días |
+
+El principio de diseño: **una query por reporte, dos presentaciones**. Cada reporte tiene un único método de repository que devuelve filas; la ruta JSON alimenta la tabla en pantalla y la ruta `.xlsx` pasa **esas mismas filas** por el generador de Excel. La tabla y el archivo exportado no pueden divergir, que es la falla clásica de este tipo de módulo.
+
+El dashboard agrega sobre las mismas tablas, sin tablas de agregación intermedias.
 
 ---
 
-## FRONTEND
+## Frontend
 
-### Estructura de directorios
+React 19 con Vite. Sin gestor de estado global más allá de dos contextos (`AuthContext`, `ThemeContext`).
 
 ```
-Frontend/src/
-├── main.jsx              # Punto de entrada, monta <App /> + <Toaster /> (react-hot-toast)
-├── App.jsx               # Router principal + AuthProvider
-├── context/
-│   └── AuthContext.jsx   # Estado global de autenticación
-├── services/             # Comunicación con el backend
-│   ├── api.js            # Cliente HTTP base (singleton ApiClient)
-│   ├── authService.js    # Login, logout, decodificación JWT
-│   ├── statsService.js   # KPIs del dashboard
-│   ├── catalogosService.js # CRUD tipos y tallas
-│   ├── rfidService.js    # Todas las operaciones RFID
-│   └── staffService.js   # Listado de personal
-├── pages/                # Una página por ruta
-│   ├── Login.jsx
-│   ├── Dashboard.jsx
-│   ├── Inventory.jsx     # 4 pestañas: Prendas, Tipos, Tallas, Realizar Inventario
-│   ├── InventoryMode.jsx # LEGACY — conservado sin uso activo (ruta redirige a /inventario)
-│   ├── Staff.jsx
-│   ├── Returns.jsx
-│   ├── Reports.jsx
-│   ├── Settings.jsx
-│   └── WorkerDashboard.jsx
-└── components/           # Componentes reutilizables por dominio
-    ├── layout/           # Sidebar, Header, Layout
-    ├── dashboard/        # MetricCard, BarChart, DonutChart
-    ├── inventory/        # CatalogoTable, CatalogoModal, ConfirmDeleteModal,
-    │                     # TabRealizarInventario (escaneo RFID masivo)
-    ├── staff/            # EmployeeTable, Pagination
-    ├── returns/          # Componentes de devoluciones
-    ├── reports/          # FileUploadArea, ReportGenerator
-    ├── worker/           # WorkerLayout, ScanningPanel, ScanHistory
-    └── fingerprint/      # FingerprintControl
+src/
+├── pages/          Una por ruta
+├── components/     Por dominio: common, dashboard, entregas, inventory, layout, staff
+├── services/       Un archivo por dominio; todos usan apiClient
+├── context/        AuthContext, ThemeContext
+├── hooks/          useThemeColors, useOnlineStatus
+├── db/ sync/ api/  Capa offline (Dexie) — ver "Deuda"
+└── styles/         index.css con las variables de tema
 ```
+
+**`apiClient`** (`services/api.js`) es un singleton sobre `fetch`. Manda `credentials: 'include'` en cada llamada para que viaje la cookie de sesión, y sabe devolver `blob` para las descargas de Excel.
+
+**Navegación**: `components/layout/TopNav.jsx`. Cada entrada declara el `modulo` que requiere y se oculta si el usuario no lo tiene. Agregar una página implica tocar `App.jsx` **y** `TopNav.jsx`.
+
+**Tablas**: `components/common/DataTable.jsx`, sobre TanStack Table, con orden y filtros por columna.
+
+**Gráficos**: Recharts. Los componentes de `components/dashboard/` toman sus colores de `useThemeColors`, que lee las variables CSS en tiempo de ejecución — así los gráficos siguen el tema claro/oscuro sin duplicar la paleta en JavaScript.
+
+**Temas**: todo el color sale de variables CSS definidas para claro y oscuro en `styles/index.css`. Los estilos compartidos entre páginas viven ahí y no en el CSS de una página, porque si no dependen de que ese archivo se haya cargado.
+
+### Las páginas
+
+| Ruta | Qué hace |
+|---|---|
+| `/` | Dashboard: KPI del período, tendencia de 12 meses por motivo, reparto por área y producto, cobertura de personal, alertas de stock |
+| `/inventario` | Productos, stock, categorías y tallas |
+| `/entregas` | Registrar (carrito) e historial |
+| `/importaciones` | Carga masiva por plantilla |
+| `/personal` | Nómina sincronizada, solo lectura, con modal de EPP por trabajador |
+| `/reportes` | Los tres reportes, con filtros y exportación a Excel |
+| `/configuracion` | Preferencias |
+| `/superadmin` | Usuarios, roles y asignación de módulos |
 
 ---
 
-### Autenticación y rutas protegidas
+## Autenticación y permisos
 
-**`AuthContext.jsx`** mantiene el estado de sesión en memoria y en `localStorage`:
+El login recibe `{ username, contrasena }` y responde con una **cookie httpOnly** llamada `authToken`. El token también viaja en el cuerpo, y `security.py` acepta el header `Authorization` como respaldo para Swagger, pero el navegador usa la cookie: no hay JWT en `localStorage`.
 
-```
-Al cargar la app:
-  localStorage tiene token? → ¿Es válido (no expirado)? → Restaura sesión
-                                                          → Si expiró: limpiar
+El JWT lleva `{ userId, username, role, modulos, exp, jti }` y dura 8 horas. El logout agrega el `jti` a `token_blacklist`, así que un token robado deja de servir aunque no haya expirado.
 
-login(username, contrasena):
-  → authService.login() → POST /api/auth/login { username, contrasena }
-  → Guarda token + user en localStorage
-  → Actualiza estado de React
+Los permisos son **por módulo**, no por rol. Un rol es un conjunto de módulos (`dashboard`, `inventario`, `entregas`, `personal`, `reportes`, `configuracion`, `superadmin`), configurable desde SuperAdmin sin tocar código. En el backend se aplica con `require_module("nombre")`; en el frontend, `ProtectedRoute` valida lo mismo y TopNav oculta lo que no corresponde.
 
-logout():
-  → POST /api/auth/logout
-  → Limpia localStorage
-  → Limpia estado de React
-```
+Los roles `admin` y `administrador` tienen acceso total por código.
 
-**`ProtectedRoute`** en `App.jsx`:
-- Si no está autenticado → redirige a `/login`.
-- ⚠️ **La validación de roles está comentada actualmente** — cualquier usuario autenticado puede acceder a cualquier ruta. Solo el redirect al hacer login (`/` para admin, `/worker` para worker) usa el rol.
-
-**Roles disponibles:** `admin` (acceso completo) y `worker` (solo portal de operario).
+**El frontend nunca es la barrera de seguridad**: ocultar un botón es cosmético. La verificación que cuenta es `require_module` en el endpoint.
 
 ---
 
-### Cliente HTTP: `src/services/api.js`
+## Infraestructura
 
-`ApiClient` es un singleton (una sola instancia compartida en toda la app):
+`compose.yml` levanta cinco servicios en el VPS:
 
-```javascript
-// Todos los servicios lo importan así:
-import apiClient from './api';
+| Servicio | Rol |
+|---|---|
+| `postgres` | Base de datos, con volumen persistente y backups |
+| `backend` | La API FastAPI |
+| `frontend` | El build estático de Vite |
+| `ofelia` | Scheduler de tareas: backup diario de la base a las 03:00, con retención de 30 días |
+| `nginx` | Reverse proxy y terminación TLS |
 
-// Y hacen llamadas como:
-apiClient.get('/inventario/tipos')
-apiClient.post('/auth/login', { username, contrasena })
-```
+El backend se conecta a la base de RRHH directamente porque corre en el mismo servidor; en desarrollo eso requiere un túnel SSH.
 
-Lee la URL base de `VITE_API_URL` o usa `http://localhost:8000/api` por defecto.
-Agrega automáticamente el header `Authorization: Bearer <token>` si hay sesión activa.
-En caso de error, extrae el mensaje del campo `detail` de FastAPI.
-
----
-
-### Servicios Frontend
-
-| Servicio | Conectado al backend | Qué hace |
-|----------|---------------------|----------|
-| `authService.js` | ✅ Sí | Login (`username`+`contrasena`)/logout, decodifica JWT para leer rol |
-| `statsService.js` | ✅ Sí | Obtiene KPIs del inventario con filtros |
-| `catalogosService.js` | ✅ Sí | CRUD de tipos de prenda y tallas |
-| `rfidService.js` | ✅ Sí | Todo el flujo RFID; exporta `RFID_ROLES = { RECEPTION, ASSIGNMENT }` |
-| `staffService.js` | ⚠️ Parcial | Solo `getEmployees()` funciona (vía `/personal/todos`). Rutas `/staff/departments`, `/staff/employees/*` NO existen (404 harmless) |
-| `huellasService.js` | ✅ Sí | Identificación 1:N y enrolamiento 4 capturas vía `/biometria/*` |
-| `returnsService.js` | ❌ No implementado | Endpoints `/returns/*` no existen en backend |
-| `reportsService.js` | ❌ Parcial | Usa mock data; `reportes.py` no está registrado en el router |
-| `alertService.js` | ❌ No implementado | Endpoints `/alerts/*` no existen |
+Guía de despliegue: `docs/staging-deploy.md`.
 
 ---
 
-### Páginas
+## Decisiones de diseño y sus porqués
 
-**`Login.jsx`**
-Formulario de acceso. Credenciales demo: `admin`/`admin123`. Redirige según rol al ingresar.
+**Stock por cantidades, no por unidad identificada.** La lavandería rastreaba cada prenda por su chip. Para EPP no tiene sentido: nadie va a serializar cada par de guantes. El costo de esa decisión es que no se puede responder "¿dónde está exactamente este casco?", solo "cuántos hay y quién recibió".
 
-**`Dashboard.jsx`**
-Panel de estadísticas con:
-- 3 KPIs: Total de prendas, Disponibles, En Uso.
-- Filtros por tipo de prenda y talla.
-- 3 gráficos: dona (disponibles vs en uso), barras por tipo, barras por talla.
-- Datos obtenidos de `GET /api/stats/inventario`.
+**Stock global aunque el sistema sea multiempresa.** Hay un solo bodegón físico. Segregar el stock por empresa habría agregado una dimensión sin correlato en la realidad. La empresa se denormaliza en la entrega, que es donde sí importa para reportar.
 
-**`Inventory.jsx`**
-4 pestañas:
-- **Prendas**: Tabla del inventario con 4 columnas visibles — **Tipo, Talla, Estado, SKU**. Las columnas "Tag EPC" y "Acción" están comentadas en el código (pendiente de habilitar en fase de asignaciones). La columna Estado muestra un badge gris "Pendiente" como placeholder; la lógica real de Disponible/Asignado está comentada junto al badge, lista para activarse. Anchos de columna explícitos vía `<colgroup>`: Tipo 35%, Talla 15%, Estado 20%, SKU 30%.
-- **Tipos de Prenda**: CRUD del catálogo.
-- **Tallas**: CRUD del catálogo.
-- **Realizar Inventario**: Escaneo masivo RFID integrado como tab (ver `TabRealizarInventario` abajo).
+**Toda devolución es una sustitución.** No existe "devolver un EPP" a secas. Refleja cómo funciona en la práctica: un EPP dañado se cambia por otro, no se devuelve a bodega para reutilizarlo.
 
-**`components/inventory/TabRealizarInventario.jsx`**
-Componente que implementa el modo inventario RFID dentro de la pestaña "Realizar Inventario":
-- Recibe props `tipos`, `tallas` (arrays) y `activo` (boolean).
-- **Ciclo de vida con cleanup automático:** si `activo` pasa a `false` (cambio de pestaña), llama `detenerModoInventario()` y limpia el `setInterval` para evitar procesos en background.
-- Polling cada 500ms a `POST /api/rfid/inventario/scan` mientras la sesión está activa.
-- Indicador LED tricolor: verde (conectado), gris clickeable (desconectado), rojo (hardware_error).
-- Panel de resumen post-sesión con `cantidad_registrada` y `duplicadas` antes de limpiar el estado.
-- Siempre usa el lector `assignment` internamente (igual que `InventoryMode.jsx`).
+**El libro mayor de movimientos.** Se podría haber guardado solo `cantidad_actual`. Tener el historial permite auditar, reconstruir y calcular consumo — que es lo que convierte el reporte de stock en algo accionable para comprar.
 
-**`InventoryMode.jsx`** *(LEGACY — no usar directamente)*
-Conservado en disco como respaldo. La ruta `/inventario-rfid` redirige a `/inventario`. No tiene entrada en el sidebar.
+**Un solo archivo de modelos.** Herencia del proyecto original. Con ~15 tablas sigue siendo manejable y evita el baile de imports circulares.
 
-**`Staff.jsx`**
-Lista de personal con búsqueda por nombre o RUT. El backend `GET /personal/todos` retorna un array plano `[{rut, nombre_completo, empresa, cargo, ...}]` — el frontend mapea: `rut→id`, `nombre_completo→name`, `empresa→department`. Tabla simplificada con columnas EMPLEADO | CARGO | ACCIONES. Botón 👆 abre modal de enrolamiento de huella usando `FingerprintControl` en modo `registration` (prop `rut`). Botón `+ Agregar Empleado` presente pero no implementado (stub vacío). No tiene paginación ni filtro por departamento (rutas `/staff/*` no implementadas en backend).
-
-**`Returns.jsx`**
-Gestión de devoluciones. **Actualmente no funcional** porque los endpoints del backend no están implementados.
-
-**`Reports.jsx`**
-Generador de reportes. **Actualmente usa datos simulados** porque `reportes.py` no está registrado en el router.
-
-**`WorkerDashboard.jsx`**
-Vista del operario. Contiene el componente `ScanningPanel` con dos tabs:
-- **Recibir prendas** (tab `receive`): usa el lector de Recepción (`?role=reception`). Escanea tags en loop y registra recepciones (`POST /api/rfid/lectura` con `accion: "RECEPCION"`).
-- **Asignar prenda** (tab `assign`): primero identifica al trabajador, luego escanea prendas en loop (`POST /api/rfid/lectura` con `accion: "ASIGNACION"`).
-  - **Identificación biométrica (método principal)**: botón "Identificar con Huella" → `POST /biometria/identificar` → polling `GET /biometria/estado/{session_id}` hasta completar. El resultado (`resultado.rut`, `resultado.nombre_completo`) se carga directamente.
-  - **Fallback manual**: enlace "Modo Manual (RUT)" muestra input para buscar por `GET /personal/todos?search=...`.
-  - `workerData` acepta keys en dos formatos: `Rut`/`NombreCompleto` (biometría) y `rut`/`nombre_completo` (búsqueda manual).
-- Si un lector falla (`hardware_error=true`), se muestra un banner de error específico sin bloquear el otro modo.
-- `RFID_ROLES` en `rfidService.js` define las constantes `{ RECEPTION: 'reception', ASSIGNMENT: 'assignment' }`.
+**Sin sistema de migraciones.** `create_all` alcanza mientras el esquema esté en construcción. Cuando el sistema esté en producción con datos reales, esto va a doler: cualquier cambio de columna hay que aplicarlo a mano.
 
 ---
 
-## Flujos de datos completos
+## Deuda conocida
 
-### Inicio de sesión
+`CLAUDE.md` tiene la lista completa y accionable. Lo que conviene saber al leer el código:
 
-```
-Usuario escribe credenciales
-    → Login.jsx llama useAuth().login(username, contrasena)
-    → authService.login() → POST /api/auth/login { username, contrasena }
-    → [Backend] AuthRepository busca usuario por nombre_completo (JOIN usuarios+roles)
-    → AuthService verifica contraseña con bcrypt
-    → Genera JWT con {userId, username, role}
-    → [Frontend] guarda token en localStorage
-    → Redirige a '/' (admin) o '/worker' (operario)
-```
-
-### Inventario en modo RFID masivo
-
-```
-Admin abre Inventario → pestaña "Realizar Inventario"
-    → TabRealizarInventario verifica estado lector y sesión activa previa
-    → Selecciona categoría y talla, presiona "Iniciar inventario"
-    → POST /api/rfid/inventario/iniciar {tipo_id, talla_id}
-    → Backend valida catálogos y guarda estado en memoria
-
-    [Cada 500ms — polling desde TabRealizarInventario.jsx]
-    → POST /api/rfid/inventario/scan
-    → Backend: lector serial escanea el chip más cercano
-    → Si EPC nuevo en esta sesión:
-        → Genera SKU: "PANTALON_BLANCO-0043"
-        → INSERT en lecturas_rfid
-        → Retorna {sku, tipo_prenda, talla, epc}
-    → Frontend: agrega fila en tiempo real a la tabla
-
-Admin presiona "Detener"
-    → POST /api/rfid/inventario/detener
-    → Backend retorna resumen {cantidad_registrada, duplicadas}
-    → Frontend muestra panel de resumen antes de limpiar el estado
-    → toast.success('Inventario finalizado')
-    → Presionar "Nuevo inventario" limpia el estado y vuelve al panel inicial
-
-Si el admin cambia de pestaña con sesión abierta:
-    → useEffect de TabRealizarInventario detecta activo=false
-    → Llama detenerModoInventario() + clearInterval automáticamente
-```
-
-### Asignar prenda a un trabajador
-
-```
-Operario en WorkerDashboard selecciona "Asignar"
-    → Busca trabajador por RUT → GET /api/personal/todos?search=RUT
-    → Inicia loop de escaneo cada 500ms
-
-    [Cada 500ms]
-    → POST /api/rfid/reader/scan?role=assignment   ← lector de Asignación (COM3)
-    → Si hardware_error=true: muestra banner de error; detiene el loop
-    → POST /api/rfid/lectura {tag_epc, accion: "ASIGNACION", rut}
-    → [Backend] RFIDService:
-        → Busca prenda por tag_epc en lecturas_rfid
-        → Busca empleado por RUT en personal
-        → AsignacionesRepository: cierra asignación activa previa del mismo SKU
-        → INSERT en asignaciones {rut, nombre_completo, sku, tag_epc, fecha_entrega}
-    → Frontend: muestra confirmación
-```
-
----
-
-## Cómo agregar una nueva funcionalidad
-
-### Nuevo endpoint de backend
-
-1. **Schema** en `app/schemas/mi_feature.py` — define qué datos entran y salen.
-2. **Repository** en `app/repositories/mi_feature_repository.py` — escribe las consultas SQL con `sqlalchemy.text()`.
-3. **Service** en `app/services/mi_feature_service.py` — implementa la lógica de negocio.
-4. **Endpoint** en `app/api/v1/endpoints/mi_feature.py` — conecta todo con FastAPI.
-5. **Registrar** en `app/api/v1/api.py` ← **fácil de olvidar**:
-   ```python
-   from app.api.v1.endpoints import mi_feature
-   api_router.include_router(mi_feature.router, prefix="/mi-feature", tags=["Mi Feature"])
-   ```
-
-### Nueva página de frontend
-
-1. **Servicio** en `src/services/miFeatureService.js` — llama a `apiClient`.
-2. **Página** en `src/pages/MiFeature.jsx` — componente React principal.
-3. **Registrar ruta** en `src/App.jsx`:
-   ```jsx
-   <Route path="/mi-feature" element={<ProtectedRoute allowedRoles={['admin']}><MiFeature /></ProtectedRoute>} />
-   ```
-4. **Agregar al menú** en `src/components/layout/Sidebar.jsx`.
-
----
-
-## Inconsistencias conocidas / Features incompletos
-
-| Problema | Impacto | Estado |
-|----------|---------|--------|
-| `reportes.py` no registrado en `api.py` | Los reportes usan datos simulados | Pendiente registrar |
-| `returnsService.js` apunta a `/returns/*` que no existe | La página de Devoluciones no funciona | Pendiente implementar |
-| `staffService.js` rutas muertas (`/staff/departments`, `/staff/employees/*`) | 404 harmless en consola; solo `getEmployees()` funciona | Pendiente limpiar o implementar CRUD |
-| `+ Agregar Empleado` en `Staff.jsx` | Botón presente, `handleAddEmployee` es stub vacío | Pendiente implementar |
-| `alertService.js` apunta a `/alerts/*` que no existe | Las alertas no funcionan | Pendiente implementar |
-| `inventario.py` llama al repositorio directamente (sin service) | Rompe la separación de capas | Aceptable por ahora |
-| Tablas `modulos` y `roles_modulos` en SQL | Definidas en el schema pero sin uso en el backend | Pendiente implementar |
-| `InventoryMode.jsx` / ruta `/inventario-rfid` | Archivo legacy conservado; ruta redirige a `/inventario` | Puede eliminarse en limpieza futura |
-| Tab Prendas — columnas Tag EPC y Acción | Comentadas en `Inventory.jsx` (no eliminadas). Estado muestra badge "Pendiente" como placeholder | Pendiente habilitar en fase de asignaciones |
-| `ProtectedRoute` validación de roles | Lógica de redirección por rol está comentada en `App.jsx` | Pendiente rehabilitar |
-| `SQL/seed_datos_prueba.sql` | Usa tabla `inventario` legacy con columnas PascalCase. No compatible con schema actual (`lecturas_rfid`). | Requiere reescritura |
-
----
-
-## Comandos de desarrollo
-
-```bash
-# Backend
-cd Backend
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-# Documentación Swagger: http://localhost:8000/docs
-
-# Seeding inicial (idempotente — seguro de re-ejecutar, actualiza si ya existe)
-python seed_admin.py
-
-# Frontend
-cd Frontend
-npm install
-npm run dev
-# App: http://localhost:5173
-
-# Credenciales de prueba
-# Admin:  admin / admin123   (campo username = nombre_completo en DB)
-```
-
+- **Sobrevive código muerto del dominio de lavandería** en ambos lados. Está inventariado; no lo tomes como referencia.
+- **La capa offline está montada pero inerte.** Dexie, el `syncManager` y el `OfflineBanner` se inicializan en `main.jsx`, pero nada encola operaciones: la cola nunca se llena. Se conservó porque estaba previsto para entregas en terreno sin red.
+- **Los reportes usan el área *actual* del trabajador**, no la que tenía cuando recibió el EPP. Si el negocio necesita la histórica hay que denormalizar `area_id` en `entregas_epp`, y conviene decidirlo pronto: cada día que pasa acumula historial que después no se puede reconstruir.
+- **No hay stock valorizado** porque no hay precio en el catálogo de productos.
+- Las imágenes Docker del compose todavía apuntan a los nombres de la lavandería.

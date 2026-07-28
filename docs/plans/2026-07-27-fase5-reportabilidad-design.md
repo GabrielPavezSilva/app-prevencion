@@ -21,17 +21,22 @@ Precede: Fase 4 (sync de personal desde RRHH). Plan maestro: `2026-07-21-clon-pr
 
 ## Zona horaria (decisión Q9)
 
-La BD corre en **UTC** (verificado en `pg-prevencion`) y `entregas_epp.fecha_entrega` es `TIMESTAMP WITHOUT TIME ZONE` con `server_default=now()`: guarda hora UTC. El negocio opera en Chile (UTC-4/-3).
+`entregas_epp.fecha_entrega` es `TIMESTAMP WITHOUT TIME ZONE` con `server_default=now()`. El negocio opera en Chile (UTC-4/-3).
 
-Sin conversión, una entrega del 31 de julio a las 21:00 en Chile se guarda como 1 de agosto 01:00 UTC y **cae en el mes equivocado** en todo corte mensual.
+Sin conversión, una entrega del 31 de julio a las 21:00 hora chilena **cae en el mes equivocado** en todo corte mensual.
 
-Decisión: se sigue **guardando en UTC** (correcto) y se convierte **al reportar**. Todo agrupamiento y todo filtro de fecha usa:
+**Corrección posterior (2026-07-28).** El diseño original asumía que la BD guardaba UTC, basándose en el contenedor de desarrollo `pg-prevencion`. Eso resultó ser una propiedad del entorno, no del sistema: al guardar un `timestamptz` en una columna sin zona, PostgreSQL convierte **según la zona de la sesión**. El contenedor de desarrollo corre en UTC pero `compose.yml` arranca Postgres con `timezone=America/Santiago`, así que el mismo instante quedaba almacenado con 4 horas de diferencia entre entornos y los reportes salían corridos en producción.
+
+La decisión final tiene dos mitades:
+
+1. **La conexión fija su zona en UTC** — `connect_args={"options": "-c timezone=UTC"}` en `app/db/session_mysql.py`. El almacenamiento es UTC en todos los entornos, sea cual sea la configuración del servidor.
+2. **La conversión ocurre en un solo lugar**, la constante `FECHA_LOCAL` del repository, para que no se olvide en ninguna query nueva:
 
 ```sql
 (e.fecha_entrega AT TIME ZONE 'UTC') AT TIME ZONE 'America/Santiago'
 ```
 
-Encapsulado en la constante `FECHA_LOCAL` del repository para que no se olvide en ninguna query nueva.
+`tests/smoke_reportes.py` verifica ambas mitades: el borde de mes con un timestamp literal, y que una entrega recién creada (camino `now()`, el que depende de la zona de la sesión) se reporte en la hora local correcta. El smoke corre en verde contra un servidor en UTC y contra uno en `America/Santiago`.
 
 ---
 
