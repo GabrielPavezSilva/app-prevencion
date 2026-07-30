@@ -26,13 +26,13 @@ Este repositorio es un **fork de un sistema de lavandería industrial** del mism
 
 La lavandería gestionaba prendas individuales con **chips RFID**, leídas por lectores UHF conectados por puerto serial, con identificación de operarios por **huella dactilar** (DigitalPersona U.are.U 4500) y un portal separado para trabajadores.
 
-**Todo eso fue eliminado.** No hay hardware, ni RFID, ni biometría, ni portal de operarios. Si te cruzás con `lecturas_rfid`, `asignaciones`, `tiposPrendas`, `secciones` o `temporadas`, estás mirando restos que todavía no se barrieron — `CLAUDE.md` tiene la lista completa de lo que corresponde borrar.
+**Todo eso fue eliminado**, y el código muerto que había quedado en pie (endpoints de asignaciones y devoluciones, la página de Returns, el Sidebar) ya se barrió. No hay hardware, ni RFID, ni biometría, ni portal de operarios. Si igual te cruzás con `lecturas_rfid`, `asignaciones`, `tiposPrendas`, `secciones` o `temporadas`, es un resto: `CLAUDE.md` lista lo poco que sigue pendiente.
 
 Vale la pena tenerlo presente porque explica varias rarezas que de otro modo parecen decisiones arbitrarias:
 
 - El archivo de sesión de base de datos se llama `session_mysql.py` y la dependencia `get_mysql_db()`, pero la base es PostgreSQL. Es herencia del fork; renombrarlo tocaría cada endpoint.
 - Todos los modelos ORM viven en `app/models/inventario.py`, un nombre que ya no describe su contenido.
-- Existen `Sidebar.jsx` y `TopNav.jsx`: la navegación real es la segunda.
+- La navegación vive en `TopNav.jsx`; los planes viejos en `docs/plans/` hablan de un `Sidebar.jsx` que ya no existe.
 
 ---
 
