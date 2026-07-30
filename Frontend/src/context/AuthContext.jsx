@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import { AuthContext } from './AuthContextModel';
 import { login as authLogin, logout as authLogout } from '../services/authService';
+import { setUnauthorizedHandler, SESION_EXPIRADA } from '../services/api';
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
@@ -18,6 +20,16 @@ export const AuthProvider = ({ children }) => {
             }
         }
         setLoading(false);
+    }, []);
+
+    // Cuando el backend responde 401, apiClient ya limpió localStorage: acá solo
+    // bajamos el usuario del estado para que ProtectedRoute redirija a /login.
+    useEffect(() => {
+        setUnauthorizedHandler(() => {
+            setUser(null);
+            toast.error(SESION_EXPIRADA);
+        });
+        return () => setUnauthorizedHandler(null);
     }, []);
 
     const login = async (username, password) => {

@@ -1,6 +1,17 @@
 // Base API client configuration
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
+// Mensaje único para la sesión vencida — la UI lo puede comparar si necesita distinguirlo
+export const SESION_EXPIRADA = "Tu sesión expiró. Inicia sesión nuevamente.";
+
+// Handler que registra AuthContext para cerrar la sesión en el cliente cuando el
+// backend responde 401. Ver ApiClient.manejarNoAutorizado.
+let onUnauthorized = null;
+
+export function setUnauthorizedHandler(handler) {
+  onUnauthorized = handler;
+}
+
 class ApiClient {
   constructor(baseURL = BASE_URL) {
     this.baseURL = baseURL;
@@ -24,9 +35,34 @@ class ApiClient {
     }
   }
 
+  /**
+   * La cookie de sesión es httpOnly y dura 8 h, pero el usuario que AuthContext
+   * restaura desde localStorage no vence: sin esto, al expirar la cookie la app
+   * sigue creyéndose logueada y todas las llamadas fallan con 401 en silencio.
+   *
+   * El propio `localStorage.removeItem` sirve de candado: si varias requests en
+   * paralelo reciben 401, solo la primera encuentra usuario y notifica.
+   */
+  manejarNoAutorizado(endpoint) {
+    // /auth/login y /auth/logout manejan su propio 401 (credenciales incorrectas)
+    if (endpoint?.startsWith("/auth/")) return;
+    // Sin sesión guardada no hay nada que expirar (ej. llamadas de fondo en /login)
+    if (!localStorage.getItem("user")) return;
+
+    localStorage.removeItem("user");
+    if (onUnauthorized) {
+      onUnauthorized();
+    } else {
+      window.location.replace("/login");
+    }
+  }
+
   // Handle response
-  async handleResponse(response, customConfig = {}) {
+  async handleResponse(response, customConfig = {}, endpoint = "") {
     if (!response.ok) {
+      if (response.status === 401) {
+        this.manejarNoAutorizado(endpoint);
+      }
       const isJson = response.headers.get("content-type")?.includes("application/json");
       const error = isJson ? await response.json().catch(() => ({ message: "An error occurred" })) : { message: await response.text() };
       throw new Error(
@@ -51,7 +87,7 @@ class ApiClient {
         credentials: this._credentials,
         ...customConfig
       });
-      return this.handleResponse(response, customConfig);
+      return this.handleResponse(response, customConfig, endpoint);
     } catch (error) {
       console.error("GET Error:", error);
       throw error;
@@ -77,7 +113,7 @@ class ApiClient {
         body: isFormData ? data : (data !== undefined && data !== null ? JSON.stringify(data) : undefined),
         ...customConfig
       });
-      return this.handleResponse(response, customConfig);
+      return this.handleResponse(response, customConfig, endpoint);
     } catch (error) {
       console.error("POST Error:", error);
       throw error;
@@ -101,7 +137,7 @@ class ApiClient {
         body: isFormData ? data : JSON.stringify(data),
         ...customConfig
       });
-      return this.handleResponse(response, customConfig);
+      return this.handleResponse(response, customConfig, endpoint);
     } catch (error) {
       console.error("PUT Error:", error);
       throw error;
@@ -125,7 +161,7 @@ class ApiClient {
         body: isFormData ? data : JSON.stringify(data),
         ...customConfig
       });
-      return this.handleResponse(response, customConfig);
+      return this.handleResponse(response, customConfig, endpoint);
     } catch (error) {
       console.error("PATCH Error:", error);
       throw error;
@@ -142,7 +178,7 @@ class ApiClient {
         credentials: this._credentials,
         ...customConfig
       });
-      return this.handleResponse(response, customConfig);
+      return this.handleResponse(response, customConfig, endpoint);
     } catch (error) {
       console.error("DELETE Error:", error);
       throw error;
