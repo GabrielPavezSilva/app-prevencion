@@ -4,7 +4,7 @@ Configuración de logging para la aplicación
 import logging
 
 # Configurar el logger principal
-logger = logging.getLogger("lavanderia")
+logger = logging.getLogger("prevencion")
 logger.setLevel(logging.INFO)
 
 # Handler para consola

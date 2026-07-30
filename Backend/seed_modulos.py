@@ -21,9 +21,12 @@ MODULOS = [
     "superadmin",
 ]
 
-# Módulos asignados a cada rol (admin siempre bypass en código — no se inserta aquí)
+# Módulos asignados a cada rol (admin siempre bypass en código — no se inserta aquí).
+# `administrador` también tiene bypass por FULL_ACCESS_ROLES, así que su lista no
+# cambia nada hoy; se mantiene completa —superadmin incluido— para que el día que
+# ese rol salga del bypass sus permisos ya estén declarados en la base.
 ROL_MODULOS = {
-    "administrador": ["dashboard", "inventario", "entregas", "personal", "reportes", "configuracion"],
+    "administrador": MODULOS,
 }
 
 database_url = os.getenv("DATABASE_URL", "")

@@ -13,7 +13,7 @@ load_dotenv()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 username = "admin"
-email = "admin@lavanderia.cl"
+email = "admin@prevencion.cl"
 contrasena = "admin123"
 role_name = "admin"
 
@@ -36,7 +36,7 @@ else:
         "port": int(os.getenv("DB_PORT_PG", "5432")),
         "user": os.getenv("DB_USER_PG", ""),
         "password": os.getenv("DB_PASSWORD_PG", ""),
-        "dbname": os.getenv("DB_NAME_PG", "db_lavanderia"),
+        "dbname": os.getenv("DB_NAME_PG", "db_prevencion"),
     }
 
 connection = psycopg2.connect(**conn_params)
@@ -65,6 +65,7 @@ try:
             VALUES (%s, %s, %s, %s)
             ON CONFLICT (username) DO UPDATE
               SET contrasena = EXCLUDED.contrasena,
+                  correo     = EXCLUDED.correo,
                   rol_id     = EXCLUDED.rol_id
             """,
             (username, email, hashed_password, rol_id)

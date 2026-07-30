@@ -29,12 +29,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build backend image
-        run: docker build -t lavanderia-backend-ci ./Backend
+        run: docker build -t prevencion-backend-ci ./Backend
 
       - name: Build frontend image
         run: |
           docker build \
             --build-arg VITE_API_URL=https://civot.cramer.cl/api \
-            --build-arg VITE_HARDWARE_URL=http://localhost:5050 \
-            -t lavanderia-frontend-ci \
+            -t prevencion-frontend-ci \
             ./Frontend

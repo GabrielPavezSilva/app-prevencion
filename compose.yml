@@ -34,16 +34,13 @@ services:
 
   # ── Backend FastAPI ──────────────────────────────────────────────────────
   backend:
-    image: ghcr.io/bgacitua/lavanderia-backend:latest
+    image: ghcr.io/gabrielpavezsilva/prevencion-backend:latest
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-civot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-civot}
       JWT_SECRET_KEY:    ${JWT_SECRET_KEY}
       JWT_EXPIRE_MINUTES: 480
       ENVIRONMENT:       ${ENVIRONMENT:-production}
-      # Puertos RFID no aplican en VPS; se mantienen por si se ejecuta en local
-      RFID_RECEPTION_PORT:  COM2
-      RFID_ASSIGNMENT_PORT: COM3
       # Base de RRHH (fuente del sync de personal). El software corre en el
       # mismo servidor que esa base, así que no hace falta túnel: apunta al
       # host de Docker. En local se usa el túnel SSH en el puerto 5434.
@@ -68,7 +65,7 @@ services:
 
   # ── Frontend React (SPA estática servida por Nginx) ──────────────────────
   frontend:
-    image: ghcr.io/bgacitua/lavanderia-frontend:latest
+    image: ghcr.io/gabrielpavezsilva/prevencion-frontend:latest
     restart: unless-stopped
     networks:
       - internal
@@ -106,5 +103,5 @@ volumes:
 
 networks:
   internal:
-    name: lavanderia_network
+    name: prevencion_network
     driver: bridge

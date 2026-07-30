@@ -42,7 +42,7 @@ npm run lint
 
 ### Base de datos de desarrollo
 
-Contenedor Docker `pg-prevencion` en `localhost:5433/db_prevencion`, cargado con la nómina real sincronizada desde RRHH.
+Contenedor Docker `pg-prevencion` en `localhost:5433/db_prevencion`, cargado con la nómina real sincronizada desde RRHH — todas las filas de `personal` tienen `buk_id`; las de prueba del fork (empresa "ACME", área "Bodega" y el trabajador ficticio que colgaba de ellas) ya se borraron.
 
 ```bash
 docker start pg-prevencion
@@ -214,6 +214,8 @@ Está definido igual en `entregas_repository`, `personal_repository` y `reportes
 
 **Permisos por módulo**: `require_module("nombre")` como dependencia FastAPI. Los roles en `FULL_ACCESS_ROLES = ("admin", "administrador")` tienen bypass total; el resto necesita el módulo en su lista. Módulos: `dashboard`, `inventario`, `entregas`, `personal`, `reportes`, `configuracion`, `superadmin`.
 
+Ojo con la asimetría entre backend y frontend: el bypass del backend cubre a los dos roles, pero `ProtectedRoute` solo exime a `admin` — cualquier otro rol se rige por los módulos del JWT. Por eso `seed_modulos.py` le asigna a `administrador` la lista **completa** de módulos: si le falta uno, el backend lo deja pasar pero la UI lo redirige. Probado en runtime con un usuario de ese rol: los 7 módulos llegan en el JWT y `/superadmin` abre.
+
 Credenciales por defecto: `admin` / `admin123`.
 
 ## Frontend
@@ -222,7 +224,7 @@ React 19 + Vite 7, React Router 7, Recharts, TanStack Table, react-hot-toast, De
 
 - **Pages** (`src/pages/`), **components** (`src/components/` por dominio), **services** (`src/services/`, todos importan `apiClient` de `api.js`).
 - `apiClient` lee `VITE_API_URL` o cae a `http://localhost:8000/api`, y manda `credentials: 'include'` para la cookie.
-- **La navegación real es `components/layout/TopNav.jsx`.** `Sidebar.jsx` existe pero **no lo importa nadie** — no lo edites creyendo que se ve.
+- **La navegación real es `components/layout/TopNav.jsx`.** (El viejo `Sidebar.jsx` del fork ya se borró.)
 - Tablas: `components/common/DataTable.jsx` (TanStack Table) — props `columns`, `data`, `loading`, `filterable`, `initialSort`, `emptyState`.
 - Toasts: `toast.success()` / `toast.error()`, nunca `alert()`.
 - Gráficos: `components/dashboard/` — `MetricCard`, `BarChart`, `DonutChart` (genérico sobre `[{nombre, cantidad}]`), `TrendChart` (barras apiladas por motivo). Los colores salen de `useThemeColors` para seguir el tema claro/oscuro.
@@ -280,23 +282,14 @@ Diseño y decisiones: `docs/plans/2026-07-27-fase5-reportabilidad-design.md`.
 
 ## Código muerto conocido
 
-Sobrevivientes de la poda del dominio de lavandería. **No los uses como referencia y no los "arregles"** — corresponde borrarlos.
+La poda de los sobrevivientes del dominio de lavandería **ya se hizo** (rama `fase-5`): se borraron los endpoints `asignaciones.py` y `devoluciones.py` con su repository/service/schema, `catalogos_repository/service`, `auditoria_repository`, `schemas/tipos_prendas.py`, y en el frontend `pages/Returns.jsx`, `components/returns/`, `returnsService.js`, `layout/Sidebar.jsx` y `api/offlineWrapper.js`. `catalogosService.js` quedó reducido a tallas. Si necesitás ver alguno, está en el historial de git.
 
-**Backend**
-- `app/api/v1/endpoints/asignaciones.py` y `devoluciones.py` — no registrados en `api.py`; consultan `lecturas_rfid`, que no existe.
-- `app/repositories/asignaciones_repository.py` y `app/services/asignaciones_service.py` — solo los usan los dos anteriores.
-- `app/repositories/catalogos_repository.py` y `app/services/catalogos_service.py` — **nadie los importa**; `inventario.py` hace SQL directo.
-- `app/repositories/auditoria_repository.py` — sin uso.
-- `__pycache__` con `.pyc` de módulos ya borrados (`biometria`, `endpoints_rfid`, `rfid_repository`).
+Lo que **queda** por revisar:
 
-**Frontend**
-- `pages/Returns.jsx`, `components/returns/` y `services/returnsService.js` — no ruteados; la sustitución vive dentro del flujo de entrega.
-- `components/layout/Sidebar.jsx` — reemplazado por TopNav.
-- `services/personalCacheService.js` y `api/offlineWrapper.js` — sin importadores.
-- `services/catalogosService.js` — solo `getTallas` tiene backend; `/inventario/tipos`, `/secciones` y `/temporadas` ya no existen.
-- `services/staffService.js` — `getDepartments()` y el CRUD `/staff/*` no tienen backend; solo `getEmployees()` (contra `/personal/todos`) funciona.
-
-**SQL** — todo `SQL/` describe el esquema de lavandería.
+- `services/personalCacheService.js` — sí lo importa `main.jsx`: `poblarCachePersonal()` corre en cada arranque y vuelca `/personal/todos` en Dexie. Pero **nadie lee esa caché**: `buscarPersonalOffline()` no tiene llamadores. Vive o muere con la capa offline (ver "Deuda").
+- `app/schemas/tallas.py` — sin importadores; `inventario.py` declara sus propios modelos Pydantic.
+- `Backend/migrations/add_uuid_to_tables.sql` — toca la tabla `asignaciones`, que ya no existe.
+- **SQL** — todo `SQL/` describe el esquema de lavandería.
 
 ## Deuda y pendientes
 
@@ -304,9 +297,7 @@ Sobrevivientes de la poda del dominio de lavandería. **No los uses como referen
 |---|---|
 | Área en reportes | Se usa el área **actual** del trabajador. Si el negocio necesita la histórica hay que denormalizar `area_id` en `entregas_epp` — decisión con fecha de vencimiento, cada día acumula historial |
 | Stock valorizado | No hay precio en `productos_epp` |
-| Capa offline | Dexie, `syncManager` y `OfflineBanner` están montados en `main.jsx`, pero **nada encola operaciones** (`offlineWrapper` no lo usa nadie): la cola nunca se llena |
-| Imágenes Docker | `compose.yml` todavía apunta a `ghcr.io/bgacitua/lavanderia-*` — falta el rename del fork |
-| Módulo `superadmin` | No está asignado a ningún rol; `admin` entra por bypass |
-| Rol `administrador` | Falta probar el login en runtime con ese rol |
+| Capa offline | Dexie, `syncManager` y `OfflineBanner` están montados en `main.jsx`, pero **nada encola operaciones**: la cola nunca se llena. El puente que faltaba (`api/offlineWrapper.js`) se borró en la poda; completar la capa implica escribirlo de nuevo o decidir que la app siempre opera con red |
+| Despliegue | Las imágenes ya son `ghcr.io/gabrielpavezsilva/prevencion-*`, pero **falta definir la variable `DEPLOY_DIR`** del repositorio con la ruta del checkout en el VPS: sin ella, `deploy.yml` falla a propósito (antes apuntaba al directorio de la lavandería y habría reiniciado el stack equivocado). Siguen con nombre viejo `scripts/deploy.sh`, `docs/staging-deploy.md` y `airflow/dags/backup_lavanderia_db.py`, que dependen de rutas reales del servidor |
 | Migraciones | No hay. Cambiar una columna existente requiere hacerlo a mano en la BD |
 | Ramas | `main`, `fase-1`, `fase-4`, `fase-5` en el remoto; **ninguna fase está mergeada a `main`** |

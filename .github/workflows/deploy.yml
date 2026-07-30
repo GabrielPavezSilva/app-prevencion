@@ -5,8 +5,8 @@ on:
     branches: [main]
 
 env:
-  IMAGE_BACKEND: ghcr.io/${{ github.repository_owner }}/lavanderia-backend
-  IMAGE_FRONTEND: ghcr.io/${{ github.repository_owner }}/lavanderia-frontend
+  IMAGE_BACKEND: ghcr.io/${{ github.repository_owner }}/prevencion-backend
+  IMAGE_FRONTEND: ghcr.io/${{ github.repository_owner }}/prevencion-frontend
 
 jobs:
   build:
@@ -44,7 +44,6 @@ jobs:
           push: true
           build-args: |
             VITE_API_URL=${{ secrets.VITE_API_URL }}
-            VITE_HARDWARE_URL=${{ secrets.VITE_HARDWARE_URL }}
           tags: |
             ${{ env.IMAGE_FRONTEND }}:latest
             ${{ env.IMAGE_FRONTEND }}:${{ github.sha }}
@@ -65,9 +64,19 @@ jobs:
           docker pull ${{ env.IMAGE_BACKEND }}:latest
           docker pull ${{ env.IMAGE_FRONTEND }}:latest
 
+      # La ruta que había acá apuntaba al checkout de la lavandería
+      # (/opt/etl-bd/proyectos-rrhh/lavanderia/app-lavanderia): un deploy de
+      # prevención habría reiniciado el stack de la otra aplicación. Definir la
+      # variable DEPLOY_DIR del repositorio (Settings → Variables) con la ruta
+      # del checkout de prevención en el VPS antes del primer deploy.
       - name: Rolling restart
-        working-directory: /opt/etl-bd/proyectos-rrhh/lavanderia/app-lavanderia
         run: |
+          set -e
+          if [ -z "${{ vars.DEPLOY_DIR }}" ]; then
+            echo "Falta la variable DEPLOY_DIR con la ruta del checkout en el VPS."
+            exit 1
+          fi
+          cd "${{ vars.DEPLOY_DIR }}"
           docker compose up -d --no-deps --wait backend
           docker compose up -d --no-deps --wait frontend
 
