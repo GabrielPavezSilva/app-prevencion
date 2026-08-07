@@ -34,25 +34,38 @@ services:
 
   # ── Backend FastAPI ──────────────────────────────────────────────────────
   backend:
-    image: ghcr.io/bgacitua/lavanderia-backend:latest
+    image: ghcr.io/gabrielpavezsilva/prevencion-backend:latest
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-civot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-civot}
       JWT_SECRET_KEY:    ${JWT_SECRET_KEY}
       JWT_EXPIRE_MINUTES: 480
       ENVIRONMENT:       ${ENVIRONMENT:-production}
-      # Puertos RFID no aplican en VPS; se mantienen por si se ejecuta en local
-      RFID_RECEPTION_PORT:  COM2
-      RFID_ASSIGNMENT_PORT: COM3
+      # Base de RRHH (fuente del sync de personal). El software corre en el
+      # mismo servidor que esa base, así que no hace falta túnel: apunta al
+      # host de Docker. En local se usa el túnel SSH en el puerto 5434.
+      EMPLOYEES_DB_HOST:     ${EMPLOYEES_DB_HOST:-host.docker.internal}
+      EMPLOYEES_DB_PORT:     ${EMPLOYEES_DB_PORT:-5432}
+      EMPLOYEES_DB_NAME:     ${EMPLOYEES_DB_NAME:-rh_cramer}
+      EMPLOYEES_DB_USER:     ${EMPLOYEES_DB_USER}
+      EMPLOYEES_DB_PASSWORD: ${EMPLOYEES_DB_PASSWORD}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - internal
+    labels:
+      ofelia.enabled: "true"
+      # Sincronización diaria de personal desde RRHH (Fase 4), 04:00.
+      # Corre el mismo service que POST /api/personal/sync, sin HTTP ni token.
+      ofelia.job-exec.sync-personal.schedule: "0 4 * * *"
+      ofelia.job-exec.sync-personal.command: "python sync_personal.py"
 
   # ── Frontend React (SPA estática servida por Nginx) ──────────────────────
   frontend:
-    image: ghcr.io/bgacitua/lavanderia-frontend:latest
+    image: ghcr.io/gabrielpavezsilva/prevencion-frontend:latest
     restart: unless-stopped
     networks:
       - internal
@@ -90,5 +103,5 @@ volumes:
 
 networks:
   internal:
-    name: lavanderia_network
+    name: prevencion_network
     driver: bridge

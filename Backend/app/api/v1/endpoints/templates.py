@@ -1,11 +1,14 @@
 import io
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from typing import List
+from app.core.security import require_module
 from app.schemas.templates import ImportTemplate, DEFAULT_TEMPLATES
 
-router = APIRouter()
+# Los templates describen la estructura de las importaciones: mismo módulo que
+# la página que los consume (Importaciones vive bajo `inventario`).
+router = APIRouter(dependencies=[Depends(require_module("inventario"))])
 
 @router.get("/", response_model=List[ImportTemplate])
 def obtener_templates():

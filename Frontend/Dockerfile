@@ -3,12 +3,10 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# ARGs inyectados desde docker-compose en tiempo de build
+# ARG inyectado desde docker-compose en tiempo de build
 ARG VITE_API_URL=http://localhost:8000/api
-ARG VITE_HARDWARE_URL=http://localhost:5050
 
 ENV VITE_API_URL=$VITE_API_URL
-ENV VITE_HARDWARE_URL=$VITE_HARDWARE_URL
 
 COPY package*.json ./
 RUN npm ci --ignore-scripts

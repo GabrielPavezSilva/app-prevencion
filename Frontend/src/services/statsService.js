@@ -1,13 +1,19 @@
 import { apiClient } from './api';
 
-export const getStatsInventario = (filtros = {}) => {
+/**
+ * Métricas del dashboard EPP.
+ *
+ * `desde`/`hasta` son fechas locales (YYYY-MM-DD) y acotan los KPI, el donut de
+ * motivos y los rankings. `meses` controla solo la ventana de la serie mensual,
+ * que termina en el mes de `hasta`.
+ */
+export const getDashboard = ({ desde, hasta, empresa_id, area_id, meses } = {}) => {
     const params = new URLSearchParams();
-    const { tipo_id, talla_id, empresa_id, seccion_id, temporada_id } = filtros;
-    if (tipo_id      != null) params.append('tipo_id',      tipo_id);
-    if (talla_id     != null) params.append('talla_id',     talla_id);
-    if (empresa_id   != null) params.append('empresa_id',   empresa_id);
-    if (seccion_id   != null) params.append('seccion_id',   seccion_id);
-    if (temporada_id != null) params.append('temporada_id', temporada_id);
+    if (desde) params.append('desde', desde);
+    if (hasta) params.append('hasta', hasta);
+    if (empresa_id != null) params.append('empresa_id', empresa_id);
+    if (area_id != null) params.append('area_id', area_id);
+    if (meses != null) params.append('meses', meses);
     const query = params.toString();
-    return apiClient.get(`/stats/inventario${query ? `?${query}` : ''}`);
+    return apiClient.get(`/stats/dashboard${query ? `?${query}` : ''}`);
 };

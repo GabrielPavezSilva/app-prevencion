@@ -1,12 +1,13 @@
 # ============================================================
-# .gitignore — Raíz del repositorio app-lavanderia
+# .gitignore — Raíz del repositorio app-prevencion
 # ============================================================
 
 # ── Archivos de entorno (sensibles) ─────────────────────────
+# .env.example NO se ignora: solo tiene placeholders y es lo que
+# copian el README y CLAUDE.md para armar el .env real.
 .env
 .env.local
 .env.production
-.env.example
 
 # ── Sistema operativo ────────────────────────────────────────
 .DS_Store

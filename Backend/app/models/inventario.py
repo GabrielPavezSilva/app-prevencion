@@ -1,14 +1,19 @@
 """
-Modelos ORM SQLAlchemy.
-Mapean las tablas de db_lavanderia (MySQL).
+Modelos ORM SQLAlchemy — dominio Prevención de Riesgos / Gestión de EPP.
+Las tablas se auto-crean con Base.metadata.create_all (PostgreSQL).
+
+Fase 1: modelo de datos del dominio EPP. Reemplaza el dominio de lavandería
+(prendas con RFID) por stock de EPP por cantidades + libro mayor de movimientos.
 """
 from sqlalchemy import (
-    Column, Integer, String, Boolean, DateTime, ForeignKey, LargeBinary, Text
+    Column, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.session import Base
 
+
+# ── Autenticación y permisos (sin cambios) ───────────────────────────────────
 
 class Rol(Base):
     """Roles para los distintos usuarios de la aplicación."""
@@ -58,164 +63,244 @@ class RolModulo(Base):
     modulo = relationship("Modulo", back_populates="roles")
 
 
-class Area(Base):
-    """Catálogo de áreas."""
-    __tablename__ = "areas"
-
-    area_id = Column(Integer, primary_key=True, autoincrement=True)
-    nombre_area = Column(String(100), nullable=False, unique=True)
-
-
-class SubArea(Base):
-    """Catálogo de subáreas."""
-    __tablename__ = "subareas"
-
-    subarea_id = Column(Integer, primary_key=True, autoincrement=True)
-    nombre_subarea = Column(String(100), nullable=False, unique=True)
-
+# ── Catálogos organizacionales (sin cambios) ─────────────────────────────────
 
 class Empresa(Base):
-    """Catálogo de empresas."""
+    """
+    Catálogo de empresas (multiempresa — D4).
+
+    Fase 4: `origen_id` espeja `rh.areas.first_level_id` de la base `rh_cramer`.
+    Los 5 nombres de empresa sí son únicos en el origen, así que `nombre_empresa`
+    conserva su UNIQUE.
+    """
     __tablename__ = "empresa"
 
     empresa_id = Column(Integer, primary_key=True, autoincrement=True)
     nombre_empresa = Column(String(100), nullable=False, unique=True)
+    origen_id = Column(Integer, nullable=True, unique=True)
 
-    lecturas = relationship("LecturaRFID", back_populates="empresa_rel")
 
+class Area(Base):
+    """
+    Catálogo de áreas (2º nivel de la jerarquía de RRHH).
+
+    Fase 4: el nombre de área NO es único a nivel global — "Administración" y
+    "Operaciones" existen en varias empresas (5 nombres repartidos en 16 filas
+    reales del origen). Por eso el UNIQUE es (nombre_area, empresa_id) y no
+    `nombre_area` solo: con el UNIQUE viejo las áreas de empresas distintas se
+    fusionaban y el reporte por área sumaba empresas.
+
+    `empresa_id` es nullable solo para no romper filas legacy anteriores al
+    sync; toda fila creada por el sync la trae.
+    """
+    __tablename__ = "areas"
+    __table_args__ = (
+        UniqueConstraint("nombre_area", "empresa_id", name="uq_areas_nombre_empresa"),
+    )
+
+    area_id = Column(Integer, primary_key=True, autoincrement=True)
+    nombre_area = Column(String(100), nullable=False)
+    empresa_id = Column(Integer, ForeignKey("empresa.empresa_id"), nullable=True)
+    origen_id = Column(Integer, nullable=True)   # rh.areas.second_level_id (tiene NULLs en origen)
+
+
+class SubArea(Base):
+    """
+    Catálogo de subáreas (3er nivel — la unidad organizacional real).
+
+    Fase 4: 71 nombres distintos sobre 163 unidades reales en el origen; el mismo
+    nombre se repite incluso dentro de una misma empresa bajo áreas distintas.
+    La identidad estable es `origen_id` = `rh.areas.id`, que sí es único global.
+    """
+    __tablename__ = "subareas"
+    __table_args__ = (
+        UniqueConstraint("nombre_subarea", "area_id", name="uq_subareas_nombre_area"),
+    )
+
+    subarea_id = Column(Integer, primary_key=True, autoincrement=True)
+    nombre_subarea = Column(String(100), nullable=False)
+    area_id = Column(Integer, ForeignKey("areas.area_id"), nullable=True)
+    origen_id = Column(Integer, nullable=True, unique=True)   # rh.areas.id
+
+
+# ── Personal (adaptada — D1/D2) ──────────────────────────────────────────────
 
 class Personal(Base):
-    """Empleados / personal operativo."""
+    """
+    Empleados / personal operativo.
+
+    Adaptada en Fase 1:
+      - empresa_id FK→empresa (se corrige el drift: el ORM anterior tenía un
+        string, pero la BD y todos los repositories usan empresa_id).
+      - area_id / subarea_id ahora NULL (el sync desde la base `employees`
+        puede no traerlos para todos).
+      - buk_id / sync_at nuevos (trazabilidad de sincronización, Fase 4).
+      - SE ELIMINA huella_digital (poda biométrica) y talla_id (D2: la talla
+        se elige manual en cada entrega, no se preserva en el trabajador).
+
+    Fase 4: `cargo` pasa de VARCHAR(50) a VARCHAR(100) — `rh.employees.name_role`
+    llega a 59 caracteres. `buk_id` guarda `rh.employees.person_id` (no `id`):
+    el id de contrato cambia si alguien reingresa, el de persona no.
+    """
     __tablename__ = "personal"
 
     rut = Column(String(20), primary_key=True)
     nombre_completo = Column(String(100), nullable=False)
-    empresa = Column(String(100), nullable=False)
-    cargo = Column(String(50), nullable=False)
-    area_id = Column(Integer, ForeignKey("areas.area_id"), nullable=False)
-    subarea_id = Column(Integer, ForeignKey("subareas.subarea_id"), nullable=False)
-    talla_id = Column(Integer, ForeignKey("tallas.talla_id"), nullable=False)
+    empresa_id = Column(Integer, ForeignKey("empresa.empresa_id"), nullable=False)
+    cargo = Column(String(100), nullable=True)
+    area_id = Column(Integer, ForeignKey("areas.area_id"), nullable=True)
+    subarea_id = Column(Integer, ForeignKey("subareas.subarea_id"), nullable=True)
     url_picture = Column(String(500), nullable=True)
-    huella_digital = Column(LargeBinary, nullable=True)
     activo = Column(Boolean, default=True)
+    buk_id = Column(Integer, nullable=True)
+    sync_at = Column(DateTime, nullable=True)
 
-    asignaciones = relationship("Asignacion", back_populates="persona")
+    entregas = relationship("EntregaEpp", back_populates="persona")
 
 
-class TipoPrenda(Base):
-    """Catálogo de tipos de prenda."""
-    __tablename__ = "tiposprendas"
-
-    TipoID = Column("tipo_id", Integer, primary_key=True, autoincrement=True)
-    nombreTipo = Column("nombre_tipo", String(50), nullable=False, unique=True)
-
-    lecturas = relationship("LecturaRFID", back_populates="tipo")
-
+# ── Catálogo de tallas (se conserva) ─────────────────────────────────────────
 
 class Talla(Base):
-    """Catálogo de tallas."""
+    """Catálogo de tallas (ampliable a tallas numéricas de calzado)."""
     __tablename__ = "tallas"
 
     TallaID = Column("talla_id", Integer, primary_key=True, autoincrement=True)
     nombreTalla = Column("nombre_talla", String(50), nullable=False, unique=True)
 
-    lecturas = relationship("LecturaRFID", back_populates="talla")
+
+# ── Dominio EPP (nuevo) ──────────────────────────────────────────────────────
+
+class CategoriaEpp(Base):
+    """Categorías de EPP (ej: protección auditiva, calzado, protección cabeza)."""
+    __tablename__ = "categorias_epp"
+
+    categoria_id = Column(Integer, primary_key=True, autoincrement=True)
+    nombre_categoria = Column(String(100), nullable=False, unique=True)
+
+    productos = relationship("ProductoEpp", back_populates="categoria")
 
 
-class Seccion(Base):
-    """Catálogo de secciones (ej: cocina, salón, lavandería)."""
-    __tablename__ = "secciones"
+class ProductoEpp(Base):
+    """Catálogo de productos EPP (una fila por tipo de EPP, no por unidad física)."""
+    __tablename__ = "productos_epp"
 
-    SeccionID = Column("seccion_id", Integer, primary_key=True, autoincrement=True)
-    nombreSeccion = Column("nombre_seccion", String(50), nullable=False, unique=True)
+    producto_id = Column(Integer, primary_key=True, autoincrement=True)
+    nombre = Column(String(100), nullable=False, unique=True)
+    categoria_id = Column(Integer, ForeignKey("categorias_epp.categoria_id"), nullable=True)
+    talla_aplica = Column(Boolean, nullable=False, default=False)
+    certificacion = Column(String(100), nullable=True)
+    descripcion = Column(Text, nullable=True)
+    activo = Column(Boolean, default=True)
 
-    lecturas = relationship("LecturaRFID", back_populates="seccion")
-
-
-class Temporada(Base):
-    """Catálogo de temporadas (ej: verano, invierno)."""
-    __tablename__ = "temporadas"
-
-    TemporadaID = Column("temporada_id", Integer, primary_key=True, autoincrement=True)
-    nombreTemporada = Column("nombre_temporada", String(50), nullable=False, unique=True)
-
-    lecturas = relationship("LecturaRFID", back_populates="temporada")
+    categoria = relationship("CategoriaEpp", back_populates="productos")
 
 
-class LecturaRFID(Base):
+class StockEpp(Base):
     """
-    Registro de lecturas RFID / inventario de prendas.
-    Cada fila = una prenda física individual, identificada por SKU (UNIQUE).
+    Stock disponible por producto+talla. Stock GLOBAL (D4): un solo bodegón,
+    sin segregación por empresa.
+
+    Regla de oro: cantidad_actual NUNCA se edita directo desde la app; siempre
+    cambia a través de un MovimientoStock (transacción atómica).
     """
-    __tablename__ = "lecturas_rfid"
+    __tablename__ = "stock_epp"
 
-    id_lectura = Column(Integer, primary_key=True, autoincrement=True)
-    tag_epc = Column(String(50), nullable=False)
-    sku = Column(String(100), nullable=False, unique=True)
-    tipo_id = Column(Integer, ForeignKey("tiposprendas.tipo_id"), nullable=False)
-    talla_id = Column(Integer, ForeignKey("tallas.talla_id"), nullable=False)
-    seccion_id = Column(Integer, ForeignKey("secciones.seccion_id"), nullable=False)
-    temporada_id = Column(Integer, ForeignKey("temporadas.temporada_id"), nullable=False)
-    accion = Column(String(50), nullable=False)
-    resultado = Column(String(50), nullable=False)
-    estado_disponible = Column(Boolean, default=True)
-    empresa_id = Column(Integer, ForeignKey("empresa.empresa_id"), nullable=False)
-    hora = Column(DateTime, server_default=func.now())
-    # UUID generado por el cliente — garantiza idempotencia en sincronización offline
-    uuid = Column(String(36), unique=True, nullable=True)
+    stock_id = Column(Integer, primary_key=True, autoincrement=True)
+    producto_id = Column(Integer, ForeignKey("productos_epp.producto_id"), nullable=False)
+    talla_id = Column(Integer, ForeignKey("tallas.talla_id"), nullable=True)
+    cantidad_actual = Column(Integer, nullable=False, default=0)
+    stock_minimo = Column(Integer, nullable=False, default=0)
 
-    tipo = relationship("TipoPrenda", back_populates="lecturas")
-    talla = relationship("Talla", back_populates="lecturas")
-    seccion = relationship("Seccion", back_populates="lecturas")
-    temporada = relationship("Temporada", back_populates="lecturas")
-    empresa_rel = relationship("Empresa", back_populates="lecturas")
+    __table_args__ = (
+        UniqueConstraint("producto_id", "talla_id", name="uq_stock_producto_talla"),
+    )
 
 
-class Asignacion(Base):
-    """Registro de entrega/devolución de prenda a un empleado."""
-    __tablename__ = "asignaciones"
+class MovimientoStock(Base):
+    """
+    Libro mayor del stock: cada cambio de cantidad_actual deja un movimiento.
+    El stock siempre es auditable reconstruyéndolo desde aquí.
+    """
+    __tablename__ = "movimientos_stock"
 
-    asignacion_id = Column(Integer, primary_key=True, autoincrement=True)
+    movimiento_id = Column(Integer, primary_key=True, autoincrement=True)
+    producto_id = Column(Integer, ForeignKey("productos_epp.producto_id"), nullable=False)
+    talla_id = Column(Integer, ForeignKey("tallas.talla_id"), nullable=True)
+    tipo = Column(String(20), nullable=False)   # INGRESO_IMPORT | ENTREGA | BAJA_DANO | AJUSTE
+    cantidad = Column(Integer, nullable=False)  # positivo (ingreso) o negativo (salida)
+    referencia_id = Column(Integer, nullable=True)  # entrega_id o importacion_id según tipo
+    usuario_id = Column(Integer, ForeignKey("usuarios.user_id"), nullable=True)
+    observacion = Column(Text, nullable=True)
+    fecha = Column(DateTime, server_default=func.now())
+
+
+class EntregaEpp(Base):
+    """
+    Entrega de EPP a un trabajador. Reemplaza a la antigua tabla `asignaciones`.
+
+    empresa_id se denormaliza desde el trabajador al momento de la entrega
+    (patrón de asignaciones) para habilitar reportes por empresa/área sin
+    recalcular. La sustitución por daño (D5) usa entrega_reemplazada_id + un
+    MovimientoStock tipo BAJA_DANO del ítem devuelto.
+    """
+    __tablename__ = "entregas_epp"
+
+    entrega_id = Column(Integer, primary_key=True, autoincrement=True)
     rut = Column(String(20), ForeignKey("personal.rut"), nullable=False)
-    nombre_completo = Column(String(100), nullable=False)
-    sku = Column(String(50), nullable=False)
-    tag_epc = Column(String(50), nullable=False)
+    nombre_completo = Column(String(100), nullable=False)   # denormalizado
+    empresa_id = Column(Integer, ForeignKey("empresa.empresa_id"), nullable=True)  # denormalizado
+    producto_id = Column(Integer, ForeignKey("productos_epp.producto_id"), nullable=False)
+    talla_id = Column(Integer, ForeignKey("tallas.talla_id"), nullable=True)
+    cantidad = Column(Integer, nullable=False, default=1)
+    motivo = Column(String(20), nullable=False)   # NUEVA | PERDIDA | DANO
+    entrega_reemplazada_id = Column(Integer, ForeignKey("entregas_epp.entrega_id"), nullable=True)
+    estado_firma = Column(String(20), default="PENDIENTE")  # PENDIENTE | FIRMADA (futuro Buk)
+    usuario_entrega = Column(Integer, ForeignKey("usuarios.user_id"), nullable=True)
+    observacion = Column(Text, nullable=True)
     fecha_entrega = Column(DateTime, server_default=func.now())
-    fecha_devolucion = Column(DateTime, nullable=True)
-    # UUID generado por el cliente — garantiza idempotencia en sincronización offline
+    # UUID generado por el cliente — idempotencia en sincronización offline (D3)
     uuid = Column(String(36), unique=True, nullable=True)
 
-    persona = relationship("Personal", back_populates="asignaciones")
+    persona = relationship("Personal", back_populates="entregas")
 
 
-class PrendaPredeterminada(Base):
-    """Mapeo de prendas predeterminadas por cargo y empresa."""
-    __tablename__ = "prendas_predeterminadas"
+class Importacion(Base):
+    """Registro de cada carga masiva vía Excel (importadores)."""
+    __tablename__ = "importaciones"
+
+    importacion_id = Column(Integer, primary_key=True, autoincrement=True)
+    template_id = Column(String(50), nullable=True)
+    nombre_archivo = Column(String(255), nullable=True)
+    filas_ok = Column(Integer, default=0)
+    filas_error = Column(Integer, default=0)
+    detalle_errores = Column(Text, nullable=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.user_id"), nullable=True)
+    fecha = Column(DateTime, server_default=func.now())
+
+
+class AuditoriaEpp(Base):
+    """
+    Auditoría genérica de ediciones/eliminaciones del dominio EPP.
+    Reemplaza a `auditoria_prendas`; forma genérica (entidad + referencia)
+    reutilizable para productos, entregas, stock o categorías.
+    """
+    __tablename__ = "auditoria_epp"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    cargo = Column(String(50), nullable=False)
-    empresa = Column(String(100), nullable=False)
-    tipo_id = Column(Integer, ForeignKey("tiposprendas.tipo_id"), nullable=False)
-
-    tipo = relationship("TipoPrenda")
-
-
-class AuditoriaPrenda(Base):
-    """Registro de auditoría de ediciones y eliminaciones de prendas."""
-    __tablename__ = "auditoria_prendas"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    sku = Column(String(100), nullable=False, index=True)
-    accion = Column(String(20), nullable=False)        # EDICION | ELIMINACION
+    entidad = Column(String(20), nullable=False)        # PRODUCTO | ENTREGA | STOCK | CATEGORIA
+    referencia = Column(String(100), nullable=False, index=True)  # id de la entidad afectada
+    accion = Column(String(20), nullable=False)         # CREACION | EDICION | ELIMINACION | AJUSTE
     usuario_id = Column(Integer, nullable=True)
     usuario_nombre = Column(String(100), nullable=True)
-    detalle = Column(Text, nullable=True)              # JSON con diff o snapshot
+    detalle = Column(Text, nullable=True)               # JSON con diff o snapshot
     fecha = Column(DateTime, server_default=func.now(), nullable=False)
 
+
+# ── Sesión / seguridad (sin cambios) ─────────────────────────────────────────
 
 class TokenBlacklist(Base):
     """JTIs de tokens invalidados por logout explícito."""
     __tablename__ = "token_blacklist"
 
-    jti = Column(String(36), primary_key=True)          # UUID del token
-    expires_at = Column(DateTime, nullable=False)        # Para limpieza periódica
+    jti = Column(String(36), primary_key=True)           # UUID del token
+    expires_at = Column(DateTime, nullable=False)         # Para limpieza periódica

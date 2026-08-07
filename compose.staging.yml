@@ -1,5 +1,5 @@
 # Stack STAGING — paralelo a producción, totalmente aislado.
-# Proyecto: lavanderia-staging (red/volúmenes/containers propios).
+# Proyecto: prevencion-staging (red/volúmenes/containers propios).
 # Prod (compose.yml) queda intacto. Se corre desde el mismo dir para compartir .env.
 #
 #   docker compose -f compose.staging.yml up -d --build
@@ -7,7 +7,7 @@
 # Acceso: SSH tunnel -> ssh -L 8083:127.0.0.1:8083 <vps>  ->  http://localhost:8083
 # Ver docs/staging-deploy.md para el runbook completo (incl. restore de la DB).
 
-name: lavanderia-staging
+name: prevencion-staging
 
 services:
   # ── PostgreSQL aislado (se restaura del último dump de prod) ──────────────
@@ -33,7 +33,7 @@ services:
 
   # ── Backend FastAPI — MISMA imagen que prod (rediseño no toca backend) ────
   backend-staging:
-    image: ghcr.io/bgacitua/lavanderia-backend:latest
+    image: ghcr.io/gabrielpavezsilva/prevencion-backend:latest
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-civot}:${POSTGRES_PASSWORD}@postgres-staging:5432/${POSTGRES_DB:-civot}
@@ -51,9 +51,8 @@ services:
     build:
       context: ./Frontend
       args:
-        VITE_API_URL:      /api
-        VITE_HARDWARE_URL: http://localhost:5050
-    image: lavanderia-frontend:staging
+        VITE_API_URL: /api
+    image: prevencion-frontend:staging
     restart: unless-stopped
     networks:
       - staging
@@ -77,5 +76,5 @@ volumes:
 
 networks:
   staging:
-    name: lavanderia_staging_network
+    name: prevencion_staging_network
     driver: bridge

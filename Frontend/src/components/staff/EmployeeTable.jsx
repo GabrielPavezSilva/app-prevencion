@@ -12,7 +12,7 @@ const EmptyState = () => (
     </div>
 );
 
-const EmployeeTable = ({ employees, onVerPrendas, loading, filterable = false }) => {
+const EmployeeTable = ({ employees, onVerEpps, loading, filterable = false }) => {
     const columns = useMemo(() => [
         {
             accessorKey: 'rut',
@@ -25,43 +25,42 @@ const EmployeeTable = ({ employees, onVerPrendas, loading, filterable = false })
             header: 'Nombre',
             size: 210,
             meta: { filter: 'text' },
-            cell: ({ getValue }) => <span className="staff-cell-name">{getValue()}</span>,
+            cell: ({ row, getValue }) => (
+                <span className="staff-cell-name">
+                    {getValue()}
+                    {!row.original.activo && (
+                        <span className="staff-badge-inactivo" title="Ya no está en la nómina de RRHH">
+                            desvinculado
+                        </span>
+                    )}
+                </span>
+            ),
         },
         { accessorKey: 'empresa', header: 'Empresa', size: 160, filterFn: 'equalsString', meta: { filter: 'select' } },
-        { accessorKey: 'cargo', header: 'Cargo', size: 150, filterFn: 'equalsString', meta: { filter: 'select' } },
         { accessorKey: 'area', header: 'Área', size: 130, filterFn: 'equalsString', meta: { filter: 'select' } },
+        { accessorKey: 'subarea', header: 'Subárea', size: 170, filterFn: 'equalsString', meta: { filter: 'select' } },
+        { accessorKey: 'cargo', header: 'Cargo', size: 150, filterFn: 'equalsString', meta: { filter: 'select' } },
         {
-            accessorKey: 'talla',
-            header: 'Talla',
-            size: 92,
-            filterFn: 'equalsString',
-            meta: { align: 'center', filter: 'select' },
-            cell: ({ getValue }) => {
-                const v = getValue();
-                return v && v !== '—'
-                    ? <span className="staff-badge-neutral">{v}</span>
-                    : <span className="staff-cell-muted">—</span>;
-            },
-        },
-        {
-            accessorKey: 'prendasAsignadas',
-            header: 'Prendas activas',
-            size: 138,
+            accessorKey: 'eppVigentes',
+            header: 'EPP vigentes',
+            size: 126,
             filterFn: 'equalsString',
             meta: { align: 'center', filter: 'select' },
             cell: ({ row, getValue }) => (
-                getValue() > 0 ? (
-                    <button
-                        className="staff-badge-info staff-badge-clickable"
-                        onClick={() => onVerPrendas(row.original)}
-                        title="Ver prendas asignadas"
-                    >
-                        {getValue()}
-                    </button>
-                ) : <span className="staff-cell-muted">0</span>
+                <button
+                    className={
+                        getValue() > 0
+                            ? 'staff-badge-info staff-badge-clickable'
+                            : 'staff-badge-neutral staff-badge-clickable'
+                    }
+                    onClick={() => onVerEpps(row.original)}
+                    title="Ver EPP vigentes"
+                >
+                    {getValue()}
+                </button>
             ),
         },
-    ], [onVerPrendas]);
+    ], [onVerEpps]);
 
     return (
         <DataTable
@@ -69,7 +68,7 @@ const EmployeeTable = ({ employees, onVerPrendas, loading, filterable = false })
             data={employees}
             loading={loading}
             emptyState={<EmptyState />}
-            initialSort={[{ id: 'prendasAsignadas', desc: true }]}
+            initialSort={[{ id: 'eppVigentes', desc: true }]}
             pinFirstColumn
             filterable={filterable}
         />

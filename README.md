@@ -1,216 +1,165 @@
-# 🧺 Sistema de Lavandería
+# Prevención EPP
 
-Sistema de gestión de lavandería industrial con control de inventario, seguimiento de uniformes y gestión de devoluciones.
+Sistema de gestión de **Elementos de Protección Personal** para prevención de riesgos: catálogo de EPP, stock por producto y talla, entregas a trabajadores con motivo trazable, y reportabilidad con exportación a Excel.
 
-## 📁 Estructura del Proyecto
+El personal no se carga a mano: se sincroniza a diario desde la base de RRHH, que es la fuente de verdad.
 
-```
-Lavanderia/
-├── Frontend/                    # Aplicación React + Vite
-│   ├── src/
-│   │   ├── components/          # Componentes reutilizables
-│   │   │   ├── dashboard/       # Métricas, gráficos
-│   │   │   ├── layout/          # Header, Sidebar
-│   │   │   ├── returns/         # Gestión devoluciones
-│   │   │   ├── staff/           # Gestión personal
-│   │   │   └── worker/          # Portal trabajador
-│   │   ├── pages/               # Vistas principales
-│   │   ├── services/            # Llamadas a la API
-│   │   ├── context/             # Estado global (Auth)
-│   │   └── styles/              # CSS global
-│   ├── package.json
-│   └── vite.config.js
-│
-├── Backend/                     # API FastAPI
-│   ├── main.py                  # Punto de entrada
-│   ├── requirements.txt         # Dependencias Python
-│   ├── data/                    # Almacenamiento JSON (demo)
-│   │   ├── users.json           # Usuarios del sistema
-│   │   ├── employees.json       # Empleados
-│   │   ├── returns.json         # Devoluciones pendientes
-│   │   ├── return_items.json    # Items de devolución
-│   │   ├── inventory.json       # Inventario
-│   │   └── alerts.json          # Alertas
-│   └── app/
-│       ├── api/v1/
-│       │   ├── api.py           # Router principal
-│       │   └── endpoints/       # Endpoints por módulo
-│       ├── core/
-│       │   └── security.py      # JWT utilities
-│       ├── models/
-│       │   └── schemas.py       # Modelos Pydantic
-│       └── services/
-│           └── json_storage.py  # Persistencia JSON
-│
-└── .venv/                       # Entorno virtual Python
-```
+- **Backend** — Python 3.13 · FastAPI · SQLAlchemy 2.0 · PostgreSQL
+- **Frontend** — React 19 · Vite 7 · React Router 7 · Recharts · TanStack Table
+- **Despliegue** — Docker Compose (Postgres + backend + frontend + Nginx + Ofelia para tareas programadas)
+
+UI, comentarios y documentación en español.
+
+> Este repositorio es un fork de un sistema de lavandería industrial del mismo autor, reconvertido por fases. El dominio viejo (RFID, lectores UHF, huella dactilar) fue eliminado. Ver `ARQUITECTURA.md`.
 
 ---
 
-## 🚀 Despliegue de la Demo
+## Documentación
 
-### Requisitos Previos
-- Python 3.9+
-- Node.js 18+
-- npm o yarn
+| Archivo | Qué contiene |
+|---|---|
+| `CLAUDE.md` | Guía operativa: comandos, esquema, rutas de la API, invariantes que no se pueden romper, deuda |
+| `ARQUITECTURA.md` | Por qué el sistema tiene esta forma: flujos, decisiones de diseño y su costo |
+| `docs/runbook-sync-personal.md` | Sincronización de personal desde RRHH |
+| `docs/staging-deploy.md` | Despliegue en staging |
+| `docs/plans/` | Documentos de diseño por fase (registro histórico) |
 
-### 1. Configurar el Backend
+---
+
+## Puesta en marcha (desarrollo)
+
+Requisitos: Python 3.13+, Node.js 18+, Docker.
+
+### 1. Base de datos
 
 ```bash
-# Navegar al directorio del backend
+docker run -d --name pg-prevencion -e POSTGRES_PASSWORD=<clave> -e POSTGRES_DB=db_prevencion -p 5433:5432 postgres:16-alpine
+```
+
+### 2. Backend
+
+```bash
 cd Backend
-
-# Crear y activar entorno virtual (si no existe)
-python -m venv ../.venv
-source ../.venv/bin/activate  # En Mac/Linux
-# ..\.venv\Scripts\activate   # En Windows
-
-# Instalar dependencias
+python -m venv venv
+venv/Scripts/activate          # Windows · source venv/bin/activate en Linux/Mac
 pip install -r requirements.txt
-
-# Iniciar el servidor
+cp .env.example .env           # completar credenciales
 uvicorn main:app --reload --port 8000
 ```
 
-El backend estará disponible en: **http://localhost:8000**
-- Documentación Swagger: http://localhost:8000/docs
-- Documentación ReDoc: http://localhost:8000/redoc
-
-### 2. Configurar el Frontend
+Las tablas se crean solas al arrancar (`Base.metadata.create_all`). Después, los seeds — son idempotentes:
 
 ```bash
-# En otra terminal, navegar al frontend
+venv/Scripts/python.exe seed_admin.py       # usuario admin / admin123
+venv/Scripts/python.exe seed_modulos.py     # módulos y permisos por rol
+```
+
+API en **http://localhost:8000** · Swagger en `/docs`.
+
+### 3. Frontend
+
+```bash
 cd Frontend
-
-# Instalar dependencias
 npm install
-
-# Iniciar servidor de desarrollo
 npm run dev
 ```
 
-El frontend estará disponible en: **http://localhost:5173**
-
-### 3. Credenciales de Prueba
-
-| Usuario | Contraseña | Rol |
-|---------|------------|-----|
-| admin | admin123 | Administrador |
-| jperez | worker123 | Trabajador |
-| mrodriguez | worker123 | Trabajador |
+SPA en **http://localhost:5173**. Entrar por `localhost`, **no** por `127.0.0.1`: la sesión viaja en una cookie `samesite=strict` que no se comparte entre ambos hosts.
 
 ---
 
-## 🔧 Agregar Nuevas Funcionalidades
+## Verificación
 
-### Agregar un Nuevo Endpoint en el Backend
+No hay suite de pytest ni se usa `TestClient` (choque de versión de httpx). El patrón del proyecto es levantar un PostgreSQL efímero en Docker, crear el esquema desde el ORM y ejercitar **Service → Repository** con un script de checks:
 
-1. **Crear el schema Pydantic** en `Backend/app/models/schemas.py`:
-```python
-class NuevoItemRequest(BaseModel):
-    nombre: str
-    cantidad: int
-
-class NuevoItemResponse(BaseModel):
-    id: int
-    nombre: str
-    cantidad: int
-```
-
-2. **Crear el archivo de endpoints** en `Backend/app/api/v1/endpoints/nuevo_modulo.py`:
-```python
-from fastapi import APIRouter
-from app.models.schemas import NuevoItemRequest, NuevoItemResponse
-
-router = APIRouter()
-
-@router.get("/items")
-async def get_items():
-    return []
-
-@router.post("/items", response_model=NuevoItemResponse)
-async def create_item(request: NuevoItemRequest):
-    # Lógica aquí
-    pass
-```
-
-3. **Registrar el router** en `Backend/app/api/v1/api.py`:
-```python
-from app.api.v1.endpoints import nuevo_modulo
-
-api_router.include_router(
-    nuevo_modulo.router, 
-    prefix="/nuevo", 
-    tags=["Nuevo Módulo"]
-)
-```
-
-### Agregar un Nuevo Servicio en el Frontend
-
-1. **Crear el servicio** en `Frontend/src/services/nuevoService.js`:
-```javascript
-import apiClient from './api';
-
-export const getItems = async () => {
-    return apiClient.get('/nuevo/items');
-};
-
-export const createItem = async (data) => {
-    return apiClient.post('/nuevo/items', data);
-};
-
-export default { getItems, createItem };
-```
-
-2. **Usar en un componente**:
-```jsx
-import { getItems } from '../services/nuevoService';
-
-useEffect(() => {
-    getItems().then(data => setItems(data));
-}, []);
-```
-
-### Agregar Datos de Prueba
-
-Los datos se almacenan en archivos JSON en `Backend/data/`. Para agregar nuevos datos:
-
-1. Crear archivo `Backend/data/nuevo_modulo.json`
-2. Agregar instancia de storage en `Backend/app/services/json_storage.py`:
-```python
-nuevo_storage = JSONStorage(DATA_DIR / 'nuevo_modulo.json')
-```
-
----
-
-## 📦 Migración a Producción (SQL Server)
-
-1. **Reemplazar** `json_storage.py` con repositorios SQLAlchemy
-2. **Configurar** connection string en variables de entorno:
 ```bash
-DATABASE_URL="mssql+pyodbc://user:pass@server/db?driver=ODBC+Driver+17+for+SQL+Server"
+docker run -d --name pg_smoke -e POSTGRES_PASSWORD=test -e POSTGRES_DB=db_smoke -p 55432:5432 postgres:16-alpine
 ```
-3. **Crear modelos ORM** basados en los schemas de Pydantic
-4. **Usar Alembic** para migraciones de base de datos
+
+```bash
+cd Backend && PYTHONIOENCODING=utf-8 PYTHONPATH=. venv/Scripts/python.exe tests/smoke_reportes.py
+```
+
+```bash
+docker rm -f pg_smoke
+```
+
+`tests/smoke_sync_personal.py` cubre el sync de personal y necesita además el túnel SSH a RRHH. **Ambos scripts hacen `drop_all` sobre la base destino: nunca apuntarlos a una base real.**
+
+En el frontend: `npm run lint` y `npm run build`.
 
 ---
 
-## 📚 Endpoints Disponibles
+## Despliegue
 
-| Módulo | Endpoints |
-|--------|-----------|
-| Auth | `POST /api/auth/login`, `POST /api/auth/logout` |
-| Staff | `GET/POST /api/staff/employees`, `GET/PUT/DELETE /api/staff/employees/{id}` |
-| Returns | `GET /api/returns/employees`, `POST /api/returns/process` |
-| Inventory | `GET /api/inventory/categories/levels` |
-| Alerts | `GET /api/alerts/recent`, `PUT /api/alerts/{id}/read` |
-| Stats | `GET /api/stats/inventory` |
+```bash
+cp .env.example .env          # completar valores
+docker compose up -d --build
+docker compose exec backend python seed_admin.py
+```
+
+Ofelia corre dos tareas programadas dentro del stack: backup diario de la base a las 03:00 y sincronización de personal desde RRHH a las 04:00.
 
 ---
 
-## 🛠️ Herramientas de Desarrollo
+## Módulos de la API
 
-- **Backend**: FastAPI, Pydantic, uvicorn
-- **Frontend**: React 18, Vite, CSS Modules
-- **Persistencia Demo**: JSON files
-- **Persistencia Producción**: SQL Server + SQLAlchemy
+Todo cuelga de `/api`. Cada módulo se protege con `require_module("<nombre>")`; los roles `admin` y `administrador` tienen acceso total.
+
+| Módulo | Prefijo | Contenido |
+|---|---|---|
+| Auth | `/api/auth` | Login y logout (cookie httpOnly de 8 h) |
+| Personal | `/api/personal` | Nómina sincronizada desde RRHH, áreas, sync |
+| EPP | `/api/epp` | Categorías, productos, stock, movimientos |
+| Entregas | `/api/entregas` | Entrega, sustitución e historial por trabajador |
+| Importaciones | `/api/importaciones` | Carga masiva desde planilla |
+| Templates | `/api/templates` | Plantillas de importación |
+| Inventario | `/api/inventario` | Tallas y empresas |
+| Reportes | `/api/reportes` | Trazabilidad, EPP vigentes y stock — cada uno con su ruta `.xlsx` |
+| Stats | `/api/stats` | Métricas del dashboard |
+| Superadmin | `/api/superadmin` | Usuarios, roles y asignación de módulos |
+
+El detalle de cada ruta está en `CLAUDE.md` y en Swagger.
+
+---
+
+## Estructura
+
+```
+app-prevencion/
+├── Backend/                 API FastAPI
+│   ├── main.py              Entry point: CORS, rate limiting, routers, create_all
+│   ├── sync_personal.py     CLI del sync de personal (lo dispara el scheduler)
+│   ├── seed_admin.py        Seeds idempotentes
+│   ├── seed_modulos.py
+│   ├── app/
+│   │   ├── api/v1/          Endpoints + router principal (api.py)
+│   │   ├── services/        Lógica de negocio
+│   │   ├── repositories/    Acceso a datos — SQL crudo con sqlalchemy.text()
+│   │   ├── schemas/         Modelos Pydantic
+│   │   ├── models/          ORM (todo en inventario.py)
+│   │   ├── core/            Config, seguridad, logging
+│   │   └── db/              Sesiones: base propia y solo-lectura a RRHH
+│   └── tests/               Smoke tests y seed de datos de demo
+│
+├── Frontend/                SPA React + Vite
+│   └── src/
+│       ├── pages/           Una por ruta
+│       ├── components/      Por dominio + layout y comunes
+│       ├── services/        Llamadas a la API (todas vía apiClient)
+│       ├── context/         Auth y tema
+│       └── styles/          Variables CSS, tema claro y oscuro
+│
+├── docs/                    Runbooks y documentos de diseño
+├── nginx/                   Configuración del reverse proxy
+├── airflow/                 DAG de backup
+└── compose.yml              Stack de producción
+```
+
+La arquitectura del backend es **Endpoint → Service → Repository → PostgreSQL**. Los repositories usan SQL crudo con `sqlalchemy.text()`, no la query API del ORM.
+
+---
+
+## Credenciales por defecto
+
+`admin` / `admin123` — cambiarlas antes de cualquier despliegue real.

@@ -2,16 +2,42 @@ import { useState, useEffect, useCallback } from 'react';
 import MetricCard from '../components/dashboard/MetricCard';
 import BarChart from '../components/dashboard/BarChart';
 import DonutChart from '../components/dashboard/DonutChart';
-import { getStatsInventario } from '../services/statsService';
-import { getTipos, getTallas, getSecciones, getTemporadas } from '../services/catalogosService';
-import { apiClient } from '../services/api';
+import TrendChart from '../components/dashboard/TrendChart';
+import { getDashboard } from '../services/statsService';
+import { getAreas, getEmpresas } from '../services/reportsService';
 import { useThemeColors } from '../hooks/useThemeColors';
 import './Dashboard.css';
 
-const FILTROS_VACIOS = {
-    tipo_id: null, talla_id: null,
-    empresa_id: null, seccion_id: null, temporada_id: null,
-};
+// Los rangos se calculan en hora local del navegador: el backend interpreta
+// desde/hasta como fechas locales de Chile y convierte al agregar.
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+const RANGOS = [
+    {
+        id: 'mes', label: 'Mes en curso', meses: 12, calcular: () => {
+            const hoy = new Date();
+            return { desde: iso(new Date(hoy.getFullYear(), hoy.getMonth(), 1)), hasta: iso(hoy) };
+        },
+    },
+    {
+        id: '3m', label: 'Últimos 3 meses', meses: 12, calcular: () => {
+            const hoy = new Date();
+            return { desde: iso(new Date(hoy.getFullYear(), hoy.getMonth() - 2, 1)), hasta: iso(hoy) };
+        },
+    },
+    {
+        id: '6m', label: 'Últimos 6 meses', meses: 12, calcular: () => {
+            const hoy = new Date();
+            return { desde: iso(new Date(hoy.getFullYear(), hoy.getMonth() - 5, 1)), hasta: iso(hoy) };
+        },
+    },
+    {
+        id: '12m', label: 'Últimos 12 meses', meses: 12, calcular: () => {
+            const hoy = new Date();
+            return { desde: iso(new Date(hoy.getFullYear(), hoy.getMonth() - 11, 1)), hasta: iso(hoy) };
+        },
+    },
+];
 
 const toBarData = (items) =>
     (items || []).map((item) => ({ name: item.nombre, value: item.cantidad }));
@@ -69,17 +95,42 @@ function Panel({ title, subtitle, children }) {
     );
 }
 
-const Dashboard = () => {
-    const [stats, setStats]       = useState(null);
-    const [filtros, setFiltros]   = useState(FILTROS_VACIOS);
-    const [loading, setLoading]   = useState(true);
-    const [error, setError]       = useState(null);
+const IconEntrega = () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+    </svg>
+);
+const IconPerdida = () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="13" /><line x1="12" y1="16" x2="12.01" y2="16" />
+    </svg>
+);
+const IconDano = () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M13 2L3 14h8l-1 8 10-12h-8l1-8z" />
+    </svg>
+);
+const IconStock = () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8" />
+    </svg>
+);
+const IconSinEpp = () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+        <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+);
 
-    const [tipos, setTipos]           = useState([]);
-    const [tallas, setTallas]         = useState([]);
-    const [secciones, setSecciones]   = useState([]);
-    const [temporadas, setTemporadas] = useState([]);
-    const [empresas, setEmpresas]     = useState([]);
+const Dashboard = () => {
+    const [data, setData] = useState(null);
+    const [rango, setRango] = useState('mes');
+    const [empresaId, setEmpresaId] = useState(null);
+    const [areaId, setAreaId] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    const [empresas, setEmpresas] = useState([]);
+    const [areas, setAreas] = useState([]);
 
     const chartTheme = useThemeColors({
         grid:          ['--color-border', '#e2e8f0'],
@@ -89,12 +140,16 @@ const Dashboard = () => {
         tooltipText:   ['--color-text-secondary', '#475569'],
     });
 
-    const cargar = useCallback(async (f) => {
+    const cargar = useCallback(async (rangoId, empresa, area) => {
         setLoading(true);
         setError(null);
         try {
-            const data = await getStatsInventario(f);
-            setStats(data);
+            const def = RANGOS.find((r) => r.id === rangoId) || RANGOS[0];
+            const { desde, hasta } = def.calcular();
+            setData(await getDashboard({
+                desde, hasta, meses: def.meses,
+                empresa_id: empresa, area_id: area,
+            }));
         } catch (err) {
             console.error('Error cargando dashboard:', err);
             setError(err.message || 'Error al conectar con el servidor');
@@ -105,150 +160,184 @@ const Dashboard = () => {
 
     useEffect(() => {
         Promise.all([
-            getTipos(),
-            getTallas(),
-            getSecciones(),
-            getTemporadas(),
-            apiClient.get('/inventario/empresas').catch(() => []),
-        ]).then(([t, ta, s, temp, e]) => {
-            setTipos(t);
-            setTallas(ta);
-            setSecciones(s);
-            setTemporadas(temp);
+            getEmpresas().catch(() => []),
+            getAreas().catch(() => []),
+        ]).then(([e, a]) => {
             setEmpresas(Array.isArray(e) ? e : []);
+            setAreas(Array.isArray(a) ? a : []);
         }).catch(() => {});
-        cargar(FILTROS_VACIOS);
-    }, [cargar]);
+    }, []);
 
-    const setFiltro = (key, value) => {
-        const nuevos = { ...filtros, [key]: value };
-        if (key === 'tipo_id') nuevos.talla_id = null;
-        setFiltros(nuevos);
-        cargar(nuevos);
+    useEffect(() => { cargar(rango, empresaId, areaId); }, [cargar, rango, empresaId, areaId]);
+
+    // Al elegir empresa, el área seleccionada puede no pertenecerle: se limpia.
+    const cambiarEmpresa = (valor) => {
+        setEmpresaId(valor);
+        setAreaId(null);
     };
 
-    const limpiarFiltros = () => {
-        setFiltros(FILTROS_VACIOS);
-        cargar(FILTROS_VACIOS);
-    };
-
-    if (error && !stats) {
+    if (error && !data) {
         return (
             <div className="dash-error">
                 <p>{error}</p>
-                <button className="btn btn-primary" onClick={() => cargar(filtros)}>Reintentar</button>
+                <button className="btn btn-primary" onClick={() => cargar(rango, empresaId, areaId)}>
+                    Reintentar
+                </button>
             </div>
         );
     }
 
-    const total       = stats?.total       ?? 0;
-    const disponibles = stats?.disponibles ?? 0;
-    const en_uso      = stats?.en_uso      ?? 0;
-    const pctDisp     = total > 0 ? Math.round(disponibles / total * 100) : 0;
-
-    const tallasConStock = new Set((stats?.por_talla || []).map((t) => t.nombre));
-    const tallaOpciones = filtros.tipo_id !== null
-        ? tallas.filter((ta) => tallasConStock.has(ta.nombreTalla))
-        : tallas;
-
-    const hayFiltro = Object.values(filtros).some((v) => v !== null);
+    const k = data?.kpis;
+    const areasVisibles = empresaId == null
+        ? areas
+        : areas.filter((a) => a.empresa_id === empresaId);
+    const hayFiltro = empresaId != null || areaId != null || rango !== 'mes';
     const n = (arr) => (arr || []).length;
+    const pctSinEpp = k?.trabajadores_activos
+        ? Math.round((k.trabajadores_sin_epp / k.trabajadores_activos) * 100)
+        : 0;
 
     return (
         <div className="dashboard">
-            {/* ── Barra de filtros (estilo control BI) ── */}
+            {/* ── Barra de filtros ── */}
             <div className="dash-toolbar">
-                <span className="dash-toolbar__label">Filtros</span>
-                <select className="dash-filter" value={filtros.tipo_id ?? ''}
-                    onChange={(e) => setFiltro('tipo_id', e.target.value === '' ? null : Number(e.target.value))}>
-                    <option value="">Todos los tipos</option>
-                    {tipos.map((t) => <option key={t.TipoID} value={t.TipoID}>{t.nombreTipo}</option>)}
+                <span className="dash-toolbar__label">Periodo</span>
+                <select className="dash-filter" value={rango} onChange={(e) => setRango(e.target.value)}>
+                    {RANGOS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
                 </select>
-                <select className="dash-filter" value={filtros.talla_id ?? ''}
-                    onChange={(e) => setFiltro('talla_id', e.target.value === '' ? null : Number(e.target.value))}
-                    disabled={tallaOpciones.length === 0}>
-                    <option value="">Todas las tallas</option>
-                    {tallaOpciones.map((ta) => <option key={ta.TallaID} value={ta.TallaID}>{ta.nombreTalla}</option>)}
-                </select>
-                <select className="dash-filter" value={filtros.empresa_id ?? ''}
-                    onChange={(e) => setFiltro('empresa_id', e.target.value === '' ? null : Number(e.target.value))}>
+                <select className="dash-filter" value={empresaId ?? ''}
+                    onChange={(e) => cambiarEmpresa(e.target.value === '' ? null : Number(e.target.value))}>
                     <option value="">Todas las empresas</option>
-                    {empresas.map((e) => <option key={e.empresa_id} value={e.empresa_id}>{e.nombre_empresa}</option>)}
+                    {empresas.map((e) => (
+                        <option key={e.empresa_id} value={e.empresa_id}>{e.nombre_empresa}</option>
+                    ))}
                 </select>
-                <select className="dash-filter" value={filtros.seccion_id ?? ''}
-                    onChange={(e) => setFiltro('seccion_id', e.target.value === '' ? null : Number(e.target.value))}>
-                    <option value="">Todas las secciones</option>
-                    {secciones.map((s) => <option key={s.SeccionID} value={s.SeccionID}>{s.nombreSeccion}</option>)}
-                </select>
-                <select className="dash-filter" value={filtros.temporada_id ?? ''}
-                    onChange={(e) => setFiltro('temporada_id', e.target.value === '' ? null : Number(e.target.value))}>
-                    <option value="">Todas las temporadas</option>
-                    {temporadas.map((t) => <option key={t.TemporadaID} value={t.TemporadaID}>{t.nombreTemporada}</option>)}
+                <select className="dash-filter" value={areaId ?? ''}
+                    onChange={(e) => setAreaId(e.target.value === '' ? null : Number(e.target.value))}
+                    disabled={areasVisibles.length === 0}>
+                    <option value="">Todas las áreas</option>
+                    {areasVisibles.map((a) => (
+                        <option key={a.area_id} value={a.area_id}>
+                            {empresaId == null && a.nombre_empresa
+                                ? `${a.nombre_area} · ${a.nombre_empresa}`
+                                : a.nombre_area}
+                        </option>
+                    ))}
                 </select>
                 {hayFiltro && (
-                    <button className="dash-btn-clear" onClick={limpiarFiltros}>Limpiar</button>
+                    <button className="dash-btn-clear" onClick={() => {
+                        setRango('mes'); setEmpresaId(null); setAreaId(null);
+                    }}>Limpiar</button>
                 )}
-                {loading && stats && <span className="dash-updating">Actualizando…</span>}
+                {loading && data && <span className="dash-updating">Actualizando…</span>}
             </div>
 
-            {/* ── Resumen (siempre visible) ── */}
+            {/* ── KPIs del periodo ── */}
             <div className="dash-kpis">
-                {loading && !stats ? (
-                    <><CardSkeleton /><CardSkeleton /><CardSkeleton /></>
+                {loading && !data ? (
+                    <><CardSkeleton /><CardSkeleton /><CardSkeleton /><CardSkeleton /></>
                 ) : (
                     <>
-                        <MetricCard title="Existencias totales" value={total} color="teal" index={0}
-                            subtitle={hayFiltro ? 'prendas filtradas' : 'prendas en el sistema'}
-                            icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8" /></svg>} />
-                        <MetricCard title="Disponibles" value={disponibles} color="green" index={1}
-                            subtitle={total > 0 ? `${pctDisp}% del total` : 'sin asignar'}
-                            icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M20 6L9 17l-5-5" /></svg>} />
-                        <MetricCard title="En uso" value={en_uso} color="amber" index={2}
-                            subtitle={total > 0 ? `${100 - pctDisp}% del total` : 'asignadas'}
-                            icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>} />
+                        <MetricCard title="Entregas del periodo" value={k.entregas_periodo} color="teal" index={0}
+                            subtitle={`${k.lineas_periodo} ${k.lineas_periodo === 1 ? 'registro' : 'registros'} · ${k.trabajadores_atendidos} trabajadores`}
+                            icon={<IconEntrega />} />
+                        <MetricCard title="Reposiciones por pérdida" value={k.reposiciones_perdida} color="amber" index={1}
+                            subtitle="unidades repuestas en el periodo" icon={<IconPerdida />} />
+                        <MetricCard title="Sustituciones por daño" value={k.sustituciones_dano} color="red" index={2}
+                            subtitle="unidades sustituidas en el periodo" icon={<IconDano />} />
+                        <MetricCard title="Productos bajo mínimo" value={k.productos_bajo_minimo} color="blue" index={3}
+                            subtitle={k.productos_en_quiebre > 0
+                                ? `${k.productos_en_quiebre} en quiebre total`
+                                : 'sin quiebres'}
+                            icon={<IconStock />} />
                     </>
                 )}
             </div>
 
-            {/* ── Categorías colapsables ── */}
-            <div className="dash-sections">
-                <Section id="disponibilidad" title="Disponibilidad" chip={`${pctDisp}% disp.`}>
-                    <div className="dash-grid dash-grid--split">
-                        <Panel title="Disponibles vs. en uso" subtitle="Estado actual del inventario">
-                            <DonutChart disponibles={disponibles} en_uso={en_uso} theme={chartTheme} />
+            {/* ── Secciones ── */}
+            {data && (
+                <div className="dash-sections">
+                    <Section id="tendencia" title="Tendencia de entregas" defaultOpen
+                        chip={`${n(data.serie_mensual)} meses`}>
+                        <Panel title="Entregas por mes"
+                            subtitle="Unidades entregadas, apiladas por motivo. La ventana es independiente del periodo de las tarjetas.">
+                            <TrendChart data={data.serie_mensual} theme={chartTheme} />
                         </Panel>
-                    </div>
-                </Section>
+                    </Section>
 
-                <Section id="distribucion" title="Distribución de prendas" chip={`${n(stats?.por_tipo)} tipos`}>
-                    <div className="dash-grid dash-grid--2">
-                        <Panel title="Por tipo de prenda" subtitle={filtros.tipo_id ? 'Tipo seleccionado' : 'Por categoría'}>
-                            <BarChart data={toBarData(stats?.por_tipo)} color="#0d9488" theme={chartTheme} />
+                    <Section id="motivos" title="Motivos" chip={`${n(data.por_motivo)} motivos`}>
+                        <div className="dash-grid dash-grid--split">
+                            <Panel title="Distribución por motivo" subtitle="Nueva · pérdida · daño en el periodo">
+                                <DonutChart data={data.por_motivo} theme={chartTheme} />
+                            </Panel>
+                        </div>
+                    </Section>
+
+                    <Section id="distribucion" title="Distribución"
+                        chip={`${n(data.por_area)} áreas`}>
+                        <div className="dash-grid dash-grid--2">
+                            <Panel title="Por área" subtitle="Dónde se está consumiendo el EPP">
+                                <BarChart data={toBarData(data.por_area)} color="#0d9488" theme={chartTheme} />
+                            </Panel>
+                            <Panel title="Productos más entregados" subtitle="Top 10 del periodo">
+                                <BarChart data={toBarData(data.top_productos)} color="#6366f1" theme={chartTheme} />
+                            </Panel>
+                        </div>
+                    </Section>
+
+                    <Section id="cobertura" title="Cobertura de personal"
+                        chip={`${k.trabajadores_sin_epp} sin EPP`}>
+                        <div className="dash-kpis" style={{ marginBottom: 0 }}>
+                            <MetricCard title="Trabajadores activos" value={k.trabajadores_activos}
+                                color="teal" subtitle="según la última sincronización con RRHH"
+                                icon={<IconSinEpp />} />
+                            <MetricCard title="Sin ningún EPP vigente" value={k.trabajadores_sin_epp}
+                                color={k.trabajadores_sin_epp > 0 ? 'red' : 'green'}
+                                subtitle={`${pctSinEpp}% de la dotación activa`} icon={<IconSinEpp />} />
+                            <MetricCard title="Unidades en bodega" value={k.unidades_en_bodega}
+                                color="blue" subtitle="stock disponible total" icon={<IconStock />} />
+                        </div>
+                    </Section>
+
+                    <Section id="alertas" title="Alertas de stock"
+                        chip={`${n(data.alertas_stock)} productos`}>
+                        <Panel title="En o bajo el mínimo"
+                            subtitle="Los 10 más críticos. El detalle completo está en Reportes → Stock.">
+                            {data.alertas_stock.length === 0 ? (
+                                <p style={{ color: 'var(--color-text-muted)', fontSize: 13, padding: '8px 0' }}>
+                                    Ningún producto está bajo su stock mínimo.
+                                </p>
+                            ) : (
+                                <table className="dash-alertas">
+                                    <thead>
+                                        <tr>
+                                            <th>Producto</th><th>Talla</th>
+                                            <th style={{ textAlign: 'right' }}>Actual</th>
+                                            <th style={{ textAlign: 'right' }}>Mínimo</th>
+                                            <th style={{ textAlign: 'center' }}>Estado</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {data.alertas_stock.map((r, i) => (
+                                            <tr key={i}>
+                                                <td>{r.producto}</td>
+                                                <td>{r.talla || '—'}</td>
+                                                <td style={{ textAlign: 'right' }}>{r.cantidad_actual}</td>
+                                                <td style={{ textAlign: 'right' }}>{r.stock_minimo}</td>
+                                                <td style={{ textAlign: 'center' }}>
+                                                    <span className={`dash-badge dash-badge--${r.estado.toLowerCase()}`}>
+                                                        {r.estado}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
                         </Panel>
-                        <Panel title="Por talla" subtitle={filtros.tipo_id ? 'Tallas del tipo' : 'Distribución de tallas'}>
-                            <BarChart data={toBarData(stats?.por_talla)} color="#2563eb" theme={chartTheme} />
-                        </Panel>
-                    </div>
-                </Section>
-
-                <Section id="empresa" title="Por empresa" chip={`${n(stats?.por_empresa)} empresas`}>
-                    <Panel title="Prendas por empresa cliente" subtitle="Reparto del inventario">
-                        <BarChart data={toBarData(stats?.por_empresa)} color="#14b8a6" theme={chartTheme} />
-                    </Panel>
-                </Section>
-
-                <Section id="seccion" title="Por área / sección" chip={`${n(stats?.por_seccion)} secciones`}>
-                    <Panel title="Distribución por sección" subtitle="Dónde se usan las prendas">
-                        <BarChart data={toBarData(stats?.por_seccion)} color="#f59e0b" theme={chartTheme} />
-                    </Panel>
-                </Section>
-
-                <Section id="temporada" title="Por temporada" chip={`${n(stats?.por_temporada)} temporadas`}>
-                    <Panel title="Distribución por temporada" subtitle="Verano / invierno">
-                        <BarChart data={toBarData(stats?.por_temporada)} color="#8b5cf6" theme={chartTheme} />
-                    </Panel>
-                </Section>
-            </div>
+                    </Section>
+                </div>
+            )}
         </div>
     );
 };
