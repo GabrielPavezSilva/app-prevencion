@@ -1,8 +1,8 @@
-# Stack de PRODUCCIÓN — http://prcivot.cramer.cl
+# Stack de PRODUCCIÓN — http://pr.civot.cramer.cl
 #
 #   docker compose up -d
 #
-# El TLS y el registro A de prcivot.cramer.cl se gestionan fuera de este stack
+# El TLS y el registro A de pr.civot.cramer.cl se gestionan fuera de este stack
 # (nginx/Caddy del host, o el edge de Cramer). Este compose publica un único
 # puerto en loopback — 127.0.0.1:8082, configurable con HTTP_PORT — que ese
 # proxy debe reenviar (ojo con no chocar con el stack de lavandería del VPS):
@@ -68,7 +68,7 @@ services:
       ENVIRONMENT:        ${ENVIRONMENT:-production}
       # El SPA se sirve desde el mismo origen (nginx enruta /api), así que el
       # navegador no hace CORS. Se deja configurable por si algún día se separa.
-      CORS_ORIGINS:       ${CORS_ORIGINS:-http://prcivot.cramer.cl,https://prcivot.cramer.cl}
+      CORS_ORIGINS:       ${CORS_ORIGINS:-http://pr.civot.cramer.cl,https://pr.civot.cramer.cl}
       # Base de RRHH (fuente del sync de personal). El software corre en el
       # mismo servidor que esa base, así que no hace falta túnel: apunta al
       # host de Docker. En local se usa el túnel SSH en el puerto 5434.
