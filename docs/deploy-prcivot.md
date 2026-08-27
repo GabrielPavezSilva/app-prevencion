@@ -1,5 +1,10 @@
 # Despliegue en `prcivot.cramer.cl`
 
+> Primera vez en un servidor limpio: `docs/bootstrap-produccion.md` tiene el
+> paso a paso para crear y sembrar la base, y dejar el entorno local trabajando
+> contra ella por túnel SSH. Este documento es la referencia del despliegue ya
+> montado.
+
 Dos stacks, un solo `.env`:
 
 | Archivo | Para qué | Cómo se levanta |

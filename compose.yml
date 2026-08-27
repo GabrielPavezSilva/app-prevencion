@@ -46,8 +46,10 @@ services:
       retries: 10
     # Solo loopback: es el extremo remoto del túnel SSH que usa compose.dev.yml
     # para trabajar en local contra estos datos. Nunca exponerlo a 0.0.0.0.
+    # DB_HOST_PORT porque el 5433 del VPS puede estar tomado por el postgres de
+    # lavandería: verificar con `ss -ltnp | grep 5433` antes del primer up.
     ports:
-      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:${DB_HOST_PORT:-5433}:5432"
     labels:
       ofelia.enabled: "true"
       ofelia.job-exec.db-backup.schedule: "0 3 * * *"
