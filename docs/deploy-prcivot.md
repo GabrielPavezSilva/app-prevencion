@@ -1,4 +1,4 @@
-# Despliegue en `pr.civot.cramer.cl`
+# Despliegue en `prcivot.cramer.cl`
 
 Dos stacks, un solo `.env`:
 
@@ -11,7 +11,7 @@ Dos stacks, un solo `.env`:
 ## Producción
 
 El stack publica **un solo puerto, en loopback**: `127.0.0.1:8082` (variable
-`HTTP_PORT`). El registro A y el certificado de `pr.civot.cramer.cl` se
+`HTTP_PORT`). El registro A y el certificado de `prcivot.cramer.cl` se
 gestionan fuera del compose; el proxy del host reenvía a ese puerto.
 
 Bloque de ejemplo para el nginx del host:
@@ -19,10 +19,12 @@ Bloque de ejemplo para el nginx del host:
 ```nginx
 server {
     listen 443 ssl http2;
-    server_name pr.civot.cramer.cl;
+    server_name prcivot.cramer.cl;
 
-    ssl_certificate     /etc/letsencrypt/live/pr.civot.cramer.cl/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/pr.civot.cramer.cl/privkey.pem;
+    # El wildcard *.cramer.cl ya cubre este nombre — mismo certificado que
+    # sirve civot.cramer.cl, sin emitir nada nuevo. Ajustá la ruta a la real.
+    ssl_certificate     /etc/letsencrypt/live/cramer.cl/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/cramer.cl/privkey.pem;
 
     client_max_body_size 25M;
 
@@ -39,7 +41,7 @@ server {
 
 server {
     listen 80;
-    server_name pr.civot.cramer.cl;
+    server_name prcivot.cramer.cl;
     return 301 https://$host$request_uri;
 }
 ```
@@ -48,29 +50,31 @@ server {
 sesión sale con `Secure`, y sin HTTPS efectivo en el navegador el login no
 persiste.
 
-### El certificado: `pr.civot.cramer.cl` tiene dos niveles
+### Por qué `prcivot` y no `pr.civot`
 
-Un wildcard `*.cramer.cl` **no** cubre este nombre: el comodín de TLS matchea un
-solo nivel de etiqueta. Las opciones son un certificado propio para
-`pr.civot.cramer.cl` (lo más simple, `certbot -d pr.civot.cramer.cl` con
-validación HTTP-01) o un wildcard `*.civot.cramer.cl`, que exige validación
-DNS-01. Si el certificado que hay hoy es `*.cramer.cl` sirviendo
-`civot.cramer.cl`, hace falta emitir uno nuevo.
+Por el certificado. Un wildcard de TLS matchea **una sola etiqueta**: `*.cramer.cl`
+cubre `prcivot.cramer.cl`, pero no `pr.civot.cramer.cl`, que tiene un nivel más.
+Ese nombre habría exigido un certificado propio o un wildcard
+`*.civot.cramer.cl` con validación DNS-01. Con `prcivot` el wildcard que ya
+existe alcanza y no hay que emitir nada.
+
+Si alguna vez se cambia a un nombre de dos niveles, hay que resolver el
+certificado primero.
 
 ### Convivencia con lavandería
 
 Las dos apps quedan en hosts distintos del mismo dominio padre, así que las
 sesiones no se pisan: FastAPI emite la cookie sin atributo `Domain`, o sea
-*host-only*, y una cookie de `civot.cramer.cl` no viaja a `pr.civot.cramer.cl`.
+*host-only*, y una cookie de `civot.cramer.cl` no viaja a `prcivot.cramer.cl`.
 
 La única forma de romper eso sería que lavandería emitiera la suya con
-`Domain=.civot.cramer.cl` o `Domain=.cramer.cl`: ahí sí llegaría a este host y,
+`Domain=.cramer.cl`: ahí sí llegaría a este host y,
 como las dos se llaman `authToken`, habría ambigüedad. Vale la pena confirmarlo
 una vez en el otro repositorio; si fuera el caso, renombrar la cookie de esta
 app en `auth.py` y `security.py` lo resuelve.
 
 Para el "elegir módulo" desde el login de lavandería alcanza con un enlace a
-`https://pr.civot.cramer.cl` en esa pantalla — cambio que va en el otro
+`https://prcivot.cramer.cl` en esa pantalla — cambio que va en el otro
 repositorio.
 
 ### Antes del primer deploy
@@ -144,7 +148,7 @@ silenciosamente una base con el nombre equivocado. Ahora se declaran con
 ```dotenv
 # Producción
 HTTP_PORT=8082
-CORS_ORIGINS=http://pr.civot.cramer.cl,https://pr.civot.cramer.cl
+CORS_ORIGINS=http://prcivot.cramer.cl,https://prcivot.cramer.cl
 
 # Desarrollo local (compose.dev.yml) — extremos locales de los túneles SSH
 DEV_DB_HOST=host.docker.internal
