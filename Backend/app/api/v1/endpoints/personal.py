@@ -1,12 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from typing import List
 from sqlalchemy.orm import Session
-from app.schemas.personal import PersonalResponse, SyncEstado, SyncResumen
+from app.schemas.personal import PersonalResponse, SyncEstado
 from app.schemas.reportes import AreaCatalogo, SubAreaCatalogo
 from app.services.personal_service import PersonalService
 from app.services.personal_sync_service import PersonalSyncService
 from app.db.deps import get_mysql_db
-from app.db.session_employees import EmployeesNotConfigured
 from app.core.security import get_current_user
 
 router = APIRouter()
@@ -31,35 +30,12 @@ async def estado_sync(db: Session = Depends(get_mysql_db),
     return PersonalSyncService(db).estado()
 
 
-@router.post("/sync", response_model=SyncResumen)
-async def sincronizar_personal(dry_run: bool = False,
-                               db: Session = Depends(get_mysql_db),
-                               current_user: dict = Depends(get_current_user)):
-    """
-    Sincroniza `personal` con la nómina activa de RRHH (base `rh_cramer`).
-
-    RRHH es la fuente de verdad: pisa todos los campos y desactiva (nunca borra)
-    a quienes salieron de la nómina. Con `dry_run=true` se calcula el resultado
-    sin escribir.
-
-    Corre a diario de forma automática; este endpoint es para el alta del día.
-    """
-    role = current_user.get("role", "")
-    modulos = current_user.get("modulos", []) or []
-    if role not in ("admin", "administrador") and "personal" not in modulos:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
-                            detail="No autorizado para sincronizar personal")
-
-    try:
-        return PersonalSyncService(db).sincronizar(
-            usuario_id=current_user.get("userId"), dry_run=dry_run
-        )
-    except EmployeesNotConfigured as e:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(e))
-    except RuntimeError as e:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+# El sync no se dispara desde la API a propósito: corre solo por el scheduler
+# (label de Ofelia en compose.yml → `python sync_personal.py`). Es una escritura
+# masiva sobre la nómina completa, con capacidad de desactivar a cientos de
+# personas de una, y no queremos esa palanca al alcance de un usuario. Para una
+# corrida manual: `docker compose exec backend python sync_personal.py`.
+# El servicio sigue expuesto acá solo de lectura, en /sync/estado.
 
 
 @router.get("/areas", response_model=List[AreaCatalogo])
@@ -79,7 +55,8 @@ async def get_subareas(area_id: int = None, db: Session = Depends(get_mysql_db),
 @router.get("/{rut}", response_model=PersonalResponse)
 async def get_personal_por_rut(rut: str, db: Session = Depends(get_mysql_db),
                                _: dict = Depends(get_current_user)):
-    """Obtiene un empleado por RUT. Va último: si no, /sync caería en esta ruta."""
+    """Obtiene un empleado por RUT. Va último: si no, /areas, /subareas y
+    /sync/estado caerían en esta ruta."""
     service = PersonalService(db)
     result = service.obtener_por_rut(rut)
     if not result:

@@ -2,7 +2,8 @@ import { apiClient } from './api';
 
 /**
  * Personal (solo lectura): la fuente de verdad es la base de RRHH y los datos
- * entran por el sync (POST /personal/sync). No hay CRUD desde la aplicación.
+ * entran por el sync programado, que corre fuera de la API. No hay CRUD desde
+ * la aplicación ni forma de disparar el sync desde acá.
  */
 
 /**
@@ -28,16 +29,6 @@ export const searchEmployees = async (searchTerm) => {
 
 export const getPersonalByRut = async (rut) => {
     return apiClient.get(`/personal/${encodeURIComponent(rut)}`);
-};
-
-/**
- * Dispara la sincronización con RRHH. Corre sola a diario; esto es para el
- * alta del día.
- * @param {boolean} dryRun - calcula el resultado sin escribir
- * @returns {Promise<Object>} Resumen { creados, actualizados, desactivados, errores… }
- */
-export const sincronizarPersonal = async (dryRun = false) => {
-    return apiClient.post(`/personal/sync${dryRun ? '?dry_run=true' : ''}`);
 };
 
 /** Fecha de la última sincronización con RRHH. */

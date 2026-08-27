@@ -2,8 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import EmployeeTable from '../components/staff/EmployeeTable';
 import EppsModal from '../components/staff/EppsModal';
-import { getEmployees, getEstadoSync, sincronizarPersonal } from '../services/staffService';
-import { useAuth } from '../context/AuthContextModel';
+import { getEmployees, getEstadoSync } from '../services/staffService';
 import './Staff.css';
 
 const formatearFechaHora = (valor) => {
@@ -15,25 +14,19 @@ const formatearFechaHora = (valor) => {
 };
 
 /**
- * Personal — solo lectura. La nómina se sincroniza desde la base de RRHH
- * (diaria + botón manual); no hay alta ni edición desde la aplicación.
+ * Personal — solo lectura. La nómina la sincroniza el scheduler desde la base
+ * de RRHH; no hay alta, edición ni forma de disparar el sync desde acá. El
+ * encabezado solo informa cuándo fue la última corrida.
  */
 const Staff = () => {
-    const { user } = useAuth();
     const [employees, setEmployees] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [incluirInactivos, setIncluirInactivos] = useState(false);
 
     const [ultimaSync, setUltimaSync] = useState(null);
-    const [sincronizando, setSincronizando] = useState(false);
 
     const [selectedEmployee, setSelectedEmployee] = useState(null);
-
-    const puedeSincronizar =
-        user?.role === 'admin' ||
-        user?.role === 'administrador' ||
-        (user?.modulos ?? []).includes('personal');
 
     const loadEmployees = useCallback(async () => {
         try {
@@ -72,28 +65,6 @@ const Staff = () => {
     useEffect(() => { loadEmployees(); }, [loadEmployees]);
     useEffect(() => { loadEstadoSync(); }, [loadEstadoSync]);
 
-    const handleSincronizar = async () => {
-        setSincronizando(true);
-        const toastId = toast.loading('Sincronizando con RRHH…');
-        try {
-            const r = await sincronizarPersonal();
-            toast.success(
-                `Sincronización lista — ${r.creados} nuevos, ${r.actualizados} actualizados, ` +
-                `${r.desactivados} desvinculados`,
-                { id: toastId, duration: 6000 }
-            );
-            if (r.errores?.length) {
-                toast.error(`${r.errores.length} registros con problemas — revisá el log`, { duration: 8000 });
-            }
-            await Promise.all([loadEmployees(), loadEstadoSync()]);
-        } catch (error) {
-            const detalle = error?.response?.data?.detail || error?.message || 'Error desconocido';
-            toast.error(`No se pudo sincronizar: ${detalle}`, { id: toastId, duration: 8000 });
-        } finally {
-            setSincronizando(false);
-        }
-    };
-
     const fechaSync = formatearFechaHora(ultimaSync);
 
     return (
@@ -128,18 +99,6 @@ const Staff = () => {
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
-
-                {puedeSincronizar && (
-                    <button
-                        type="button"
-                        className="staff-btn-primary"
-                        onClick={handleSincronizar}
-                        disabled={sincronizando}
-                        title="La nómina se sincroniza sola a diario; usá esto para un alta del día"
-                    >
-                        {sincronizando ? 'Sincronizando…' : 'Sincronizar ahora'}
-                    </button>
-                )}
             </div>
 
             <EmployeeTable

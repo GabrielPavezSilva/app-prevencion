@@ -127,7 +127,7 @@ Todas bajo el prefijo `/api`. Registradas en `app/api/v1/api.py`.
 | Módulo | Prefijo | Contenido |
 |---|---|---|
 | Auth | `/api/auth` | `POST /login`, `POST /logout` |
-| Personal | `/api/personal` | `GET /todos`, `GET /{rut}`, `GET /areas`, `GET /subareas`, `POST /sync`, `GET /sync/estado` |
+| Personal | `/api/personal` | `GET /todos`, `GET /{rut}`, `GET /areas`, `GET /subareas`, `GET /sync/estado` |
 | EPP | `/api/epp` | `categorias`, `productos`, `stock`, `stock/ajuste`, `movimientos` (CRUD) |
 | Entregas | `/api/entregas` | `POST /`, `GET /`, `POST /sustitucion`, `GET /trabajador/{rut}` |
 | Importaciones | `/api/importaciones` | `GET /`, `POST /{template_id}` |
@@ -139,7 +139,7 @@ Todas bajo el prefijo `/api`. Registradas en `app/api/v1/api.py`.
 
 `GET /` y `GET /health` cuelgan de la raíz.
 
-**Ojo con el orden de rutas**: en `personal.py`, `GET /{rut}` va **último**; si no, `/areas`, `/subareas` y `/sync` caerían en esa ruta.
+**Ojo con el orden de rutas**: en `personal.py`, `GET /{rut}` va **último**; si no, `/areas`, `/subareas` y `/sync/estado` caerían en esa ruta.
 
 ## Base de datos
 
@@ -268,8 +268,12 @@ Estilos compartidos entre páginas (como `.dash-badge` de estado de stock) van e
 
 `personal` se sincroniza desde la base de RRHH `rh_cramer` (schema `rh`), que es la **fuente de verdad**: pisa todos los campos y desactiva (nunca borra) a quien sale de la nómina. La página Personal es de solo lectura.
 
-- Endpoint: `POST /api/personal/sync` (acepta `?dry_run=true`)
-- CLI para el scheduler: `Backend/sync_personal.py`
+- CLI, único punto de entrada: `Backend/sync_personal.py` (acepta `--dry-run`)
+- Lo dispara Ofelia a las 04:00 (label en `compose.yml`); a mano,
+  `docker compose exec backend python sync_personal.py`
+- **No hay endpoint que lo dispare**, a propósito: es una escritura masiva que
+  puede desactivar a cientos de personas, y no va al alcance de un usuario.
+  `GET /api/personal/sync/estado` es solo lectura
 - Runbook completo: `docs/runbook-sync-personal.md`
 
 ## Reportabilidad

@@ -27,8 +27,11 @@ el activo del sistema.
 | Migración de esquema | `Backend/migrations/fase4_jerarquia_areas_y_sync.sql` |
 | Smoke test | `Backend/tests/smoke_sync_personal.py` |
 
-**Frecuencia:** diaria a las 04:00 vía Ofelia (label en `compose.yml`).
-Además hay botón *Sincronizar ahora* en la página Personal para el alta del día.
+**Frecuencia:** diaria a las 04:00 vía Ofelia (label en `compose.yml`), que
+ejecuta `python sync_personal.py` dentro del contenedor del backend.
+
+No hay forma de dispararlo desde la aplicación: ni endpoint ni botón. La página
+Personal solo muestra la fecha de la última corrida.
 
 ---
 
@@ -87,15 +90,26 @@ Sync OK — leídos: 591, creados: 0, actualizados: 3, sin cambios: 588, desacti
 
 Sale con código 1 si falla, para que el scheduler lo marque en rojo.
 
-### Desde la API
+### En producción, dentro del contenedor
 
 ```bash
-curl -X POST -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/personal/sync
-curl -X POST -H "Authorization: Bearer $TOKEN" "http://localhost:8000/api/personal/sync?dry_run=true"
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/personal/sync/estado
+docker compose exec backend python sync_personal.py --dry-run
+docker compose exec backend python sync_personal.py
 ```
 
-Requiere rol `admin`/`administrador` o el módulo `personal`.
+### Desde la API: no se puede, a propósito
+
+`POST /personal/sync` **no existe**. El sync es una escritura masiva sobre la
+nómina completa, con capacidad de desactivar a cientos de personas de una
+corrida: no queremos esa palanca al alcance de un usuario, ni un timeout de
+HTTP cortando una transacción a la mitad. Corre solo por el scheduler, y a mano
+por CLI cuando hace falta.
+
+Lo único expuesto es la lectura:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/personal/sync/estado
+```
 
 ---
 

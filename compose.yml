@@ -95,7 +95,7 @@ services:
     labels:
       ofelia.enabled: "true"
       # Sincronización diaria de personal desde RRHH (Fase 4), 04:00.
-      # Corre el mismo service que POST /api/personal/sync, sin HTTP ni token.
+      # Único disparador del sync: no hay endpoint que lo lance (ver CLAUDE.md).
       ofelia.job-exec.sync-personal.schedule: "0 4 * * *"
       ofelia.job-exec.sync-personal.command: "python sync_personal.py"
 

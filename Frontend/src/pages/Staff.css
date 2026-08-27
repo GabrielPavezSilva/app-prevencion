@@ -26,29 +26,6 @@
     margin-top: 2px;
 }
 
-.staff-btn-primary {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 18px;
-    background: var(--color-accent-bright);
-    color: #fff;
-    border: none;
-    border-radius: 10px;
-    font-size: 14px;
-    font-weight: 500;
-    font-family: var(--font-family);
-    cursor: pointer;
-    transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
-    white-space: nowrap;
-}
-
-.staff-btn-primary:hover {
-    background: var(--color-accent-hover);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(13, 148, 136, 0.35);
-}
-
 /* ── Filter row (título + búsqueda) ───────────── */
 .staff-filter-row {
     display: flex;
@@ -138,13 +115,6 @@
     cursor: pointer;
 }
 
-.staff-btn-primary:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-}
-
 /* ── Tabla del modal de EPP vigentes ──────────── */
 .epps-modal-table {
     width: 100%;
@@ -175,11 +145,6 @@
     .staff-page-header {
         flex-direction: column;
         align-items: flex-start;
-    }
-
-    .staff-btn-primary {
-        width: 100%;
-        justify-content: center;
     }
 
     .staff-search-input {
