@@ -33,12 +33,13 @@ docker volume ls | grep backups        # p.ej. app-lavanderia_postgres_backups
 ```
 Restaurar el más reciente (ajustá el nombre del volumen si difiere):
 ```bash
-BACKUPS_VOL=app-lavanderia_postgres_backups
+BACKUPS_VOL=prevencion_postgres_backups
+set -a; . ./.env; set +a          # trae POSTGRES_USER / POSTGRES_DB
 docker run --rm -v "$BACKUPS_VOL":/b alpine sh -c 'gunzip -c $(ls -t /b/*.sql.gz | head -1)' \
-  | docker compose -f compose.staging.yml exec -T postgres-staging psql -U civot -d civot
+  | docker compose -f compose.staging.yml exec -T postgres-staging psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"
 ```
 > Si no hay dump aún, forzá uno en prod:
-> `docker compose exec postgres bash -c 'pg_dump -U civot civot | gzip > /backups/manual_$(date +%Y%m%d_%H%M%S).sql.gz'`
+> `docker compose exec postgres bash -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" | gzip > /backups/manual_$(date +%Y%m%d_%H%M%S).sql.gz'`
 
 ## 4. Levantar el resto (backend + frontend rediseñado + nginx)
 ```bash

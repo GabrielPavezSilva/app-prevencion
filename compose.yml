@@ -19,12 +19,17 @@ name: prevencion
 services:
 
   # ── Base de datos PostgreSQL ─────────────────────────────────────────────
+  # Nombre, usuario y contraseña salen SIEMPRE del .env: no hay valor por
+  # defecto, a propósito. `${VAR:-x}` significa "usá x si VAR está vacía o no
+  # existe", así que un .env incompleto levantaba la base con el nombre
+  # heredado de la lavandería (`civot`) sin avisar. Con `${VAR:?mensaje}`
+  # compose aborta y dice qué falta.
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB:       ${POSTGRES_DB:-civot}
-      POSTGRES_USER:     ${POSTGRES_USER:-civot}
+      POSTGRES_DB:       ${POSTGRES_DB:?falta POSTGRES_DB en .env}
+      POSTGRES_USER:     ${POSTGRES_USER:?falta POSTGRES_USER en .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en .env}
       TZ:                America/Santiago
       PGTZ:              America/Santiago
@@ -35,7 +40,7 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-civot} -d ${POSTGRES_DB:-civot}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -47,7 +52,7 @@ services:
       ofelia.enabled: "true"
       ofelia.job-exec.db-backup.schedule: "0 3 * * *"
       ofelia.job-exec.db-backup.command: >
-        bash -c "pg_dump -U ${POSTGRES_USER:-civot} ${POSTGRES_DB:-civot}
+        bash -c "pg_dump -U ${POSTGRES_USER} ${POSTGRES_DB}
         | gzip > /backups/db_$(date +%Y%m%d_%H%M%S).sql.gz
         && find /backups -name '*.sql.gz' -mtime +30 -delete
         && echo 'Backup OK'"
@@ -57,7 +62,7 @@ services:
     image: ghcr.io/gabrielpavezsilva/prevencion-backend:latest
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-civot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-civot}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       JWT_SECRET_KEY:     ${JWT_SECRET_KEY:?falta JWT_SECRET_KEY en .env}
       JWT_EXPIRE_MINUTES: 480
       ENVIRONMENT:        ${ENVIRONMENT:-production}

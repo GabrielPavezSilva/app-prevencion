@@ -34,6 +34,6 @@ jobs:
       - name: Build frontend image
         run: |
           docker build \
-            --build-arg VITE_API_URL=https://civot.cramer.cl/api \
+            --build-arg VITE_API_URL=/api \
             -t prevencion-frontend-ci \
             ./Frontend

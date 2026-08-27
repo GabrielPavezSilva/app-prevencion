@@ -94,6 +94,24 @@ producción. Para trabajar sin ese riesgo, levantá el contenedor local
 Usar `localhost`, no `127.0.0.1`: la cookie httpOnly no se comparte entre los
 dos hosts.
 
+## De dónde sale el nombre de la base
+
+Una sola fuente: el `.env` del repositorio, con `POSTGRES_DB`, `POSTGRES_USER` y
+`POSTGRES_PASSWORD`. Los tres compose las leen, arman con ellas el
+`DATABASE_URL` del backend y se lo inyectan como variable de entorno.
+
+En el backend, `Settings.get_database_url()` devuelve `DATABASE_URL` si está
+definida y solo cae a los campos `DB_HOST_PG / DB_PORT_PG / DB_USER_PG /
+DB_PASSWORD_PG / DB_NAME_PG` cuando está vacía. Dentro de Docker nunca lo está:
+esos campos aplican únicamente al levantar `uvicorn` a mano fuera del
+contenedor, contra el `pg-prevencion` de desarrollo.
+
+Los defaults `${POSTGRES_DB:-civot}` que había antes eran restos de la
+lavandería (`civot` es esa otra base, no esta). La sintaxis `${VAR:-x}` usa `x`
+cuando `VAR` está vacía o no existe, así que un `.env` incompleto levantaba
+silenciosamente una base con el nombre equivocado. Ahora se declaran con
+`${VAR:?mensaje}`: sin la variable, `docker compose` aborta e indica cuál falta.
+
 ## Variables
 
 `.env.example` no incluye todavía las nuevas; agregarlas a mano al `.env`:

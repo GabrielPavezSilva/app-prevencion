@@ -7,10 +7,13 @@ class Settings(BaseSettings):
 
     # URL de base de datos completa (prioridad sobre campos individuales).
     # Formato: postgresql+psycopg2://user:pass@host:port/dbname
-    # En Docker se inyecta esta variable directamente.
+    # Los tres compose (prod, dev y staging) arman esta variable a partir de
+    # POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB del .env y la inyectan:
+    # dentro de Docker los campos DB_*_PG de abajo nunca se usan.
     DATABASE_URL: str = ""
 
-    # Campos individuales de PostgreSQL (usados si DATABASE_URL no está definida)
+    # Campos individuales de PostgreSQL. Solo aplican cuando DATABASE_URL está
+    # vacía, es decir corriendo uvicorn a mano fuera de Docker.
     DB_HOST_PG: str = "localhost"
     DB_PORT_PG: int = 5432
     DB_USER_PG: str = ""

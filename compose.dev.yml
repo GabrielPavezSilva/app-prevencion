@@ -27,8 +27,9 @@
 # al host gracias a `extra_hosts`. Los puertos van en variables por si el
 # túnel se abre en otro número o querés apuntar al postgres local.
 #
-# Variables: se leen de .env (el mismo del stack) o del entorno. Las de la BD
-# tienen default para el caso "túnel con la config de arriba".
+# Variables: se leen de .env (el mismo del stack) o del entorno. Las de la base
+# (POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD) son obligatorias y no tienen
+# default; solo el host y el puerto del túnel lo tienen.
 
 name: prevencion-dev
 
@@ -39,7 +40,9 @@ services:
     build:
       context: ./Backend
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-civot}:${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en .env}@${DEV_DB_HOST:-host.docker.internal}:${DEV_DB_PORT:-5433}/${POSTGRES_DB:-civot}
+      # Mismas POSTGRES_* del .env que usa producción — es la misma base, vista
+      # por el túnel. Sin valor por defecto: si falta una, compose aborta.
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:?falta POSTGRES_USER en .env}:${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en .env}@${DEV_DB_HOST:-host.docker.internal}:${DEV_DB_PORT:-5433}/${POSTGRES_DB:?falta POSTGRES_DB en .env}
       JWT_SECRET_KEY:     ${JWT_SECRET_KEY:-dev-secret-no-usar-en-produccion}
       JWT_EXPIRE_MINUTES: 480
       # development ⇒ cookie sin Secure (hay HTTP plano) y Swagger habilitado.
