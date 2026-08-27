@@ -31,6 +31,11 @@ const TabImportar = ({ onImportado }) => {
       const res = await importar(templateId, file);
       setResultado(res);
       if (res.filas_error === 0) toast.success(`Importadas ${res.filas_ok} filas`);
+      else if (res.aplicado === false)
+        toast.error(
+          `No se importó nada: ${res.filas_error} de ${res.total} filas con error`,
+          { duration: 7000 }
+        );
       else toast(`OK: ${res.filas_ok} · Con error: ${res.filas_error}`, { icon: "⚠️" });
       setFile(null);
       onImportado?.();
@@ -77,10 +82,20 @@ const TabImportar = ({ onImportado }) => {
           marginTop: 20, padding: "14px 16px", borderRadius: 8,
           background: "var(--color-card)", border: "1px solid var(--color-card-border)",
         }}>
-          <p style={{ fontWeight: 600, marginBottom: 8 }}>
-            Resultado: <span style={{ color: "#16a34a" }}>{resultado.filas_ok} OK</span>
-            {resultado.filas_error > 0 && <span style={{ color: "#dc2626" }}> · {resultado.filas_error} con error</span>}
-          </p>
+          {resultado.aplicado === false ? (
+            <p style={{ fontWeight: 600, marginBottom: 8, color: "#dc2626" }}>
+              No se aplicó ningún cambio — {resultado.filas_error} de {resultado.total} filas
+              con error.
+              <span style={{ display: "block", fontWeight: 400, fontSize: 13, marginTop: 4, color: "var(--color-text-secondary)" }}>
+                El stock se carga completo o no se carga: corregí el archivo y volvé a subirlo entero.
+              </span>
+            </p>
+          ) : (
+            <p style={{ fontWeight: 600, marginBottom: 8 }}>
+              Resultado: <span style={{ color: "#16a34a" }}>{resultado.filas_ok} OK</span>
+              {resultado.filas_error > 0 && <span style={{ color: "#dc2626" }}> · {resultado.filas_error} con error</span>}
+            </p>
+          )}
           {resultado.errores?.length > 0 && (
             <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "#dc2626", maxHeight: 220, overflowY: "auto" }}>
               {resultado.errores.map((e, i) => <li key={i}>{e}</li>)}

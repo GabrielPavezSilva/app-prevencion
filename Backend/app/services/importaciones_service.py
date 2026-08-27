@@ -1,7 +1,16 @@
 """
 Service de importaciones EPP — parsea Excel/CSV y aplica cada fila en su propio
-savepoint (una fila mala no aborta el resto). Registra la importación y hace un
-único commit al final.
+savepoint. Registra la importación y hace un único commit al final.
+
+Hay dos políticas de error, según lo que toque el template (`_ATOMICOS`):
+
+- **Parcial** (catálogos): una fila mala no aborta el resto. Cargar 28 de 30
+  productos y corregir dos es más cómodo que rehacer el archivo entero, y el
+  catálogo tolera estar incompleto un rato.
+- **Todo o nada** (stock): si una sola fila falla, no se aplica ninguna. Un
+  ingreso a medias deja el bodegón mintiendo, y como el ingreso es *aditivo*,
+  reintentar el archivo corregido volvería a sumar las filas que sí habían
+  entrado. Nadie se acuerda de recortar el Excel antes del segundo intento.
 """
 import io
 from typing import Optional, Dict, Any, List
@@ -11,6 +20,9 @@ from sqlalchemy.orm import Session
 from app.repositories.importaciones_repository import ImportacionesRepository
 from app.schemas.templates import DEFAULT_TEMPLATES
 from app.core.logging_config import logger
+
+# Templates que se aplican en bloque: o entran todas las filas, o ninguna.
+_ATOMICOS = frozenset({"stock_inicial", "ingreso_stock"})
 
 _MOTIVOS_HIST = ("NUEVA", "PERDIDA", "DANO")
 _BOOL_TRUE = {"SI", "SÍ", "S", "TRUE", "1", "X", "V", "VERDADERO", "YES", "Y"}
@@ -110,6 +122,20 @@ class ImportacionesService:
                 logger.error(f"Import fila {fila_num}: {type(e).__name__}: {e}")
                 errores.append(f"Fila {fila_num}: error inesperado ({type(e).__name__})")
 
+        total = filas_ok + len(errores)
+
+        # Todo o nada: se descartan también las filas que sí habían entrado. El
+        # rollback deja la sesión limpia para registrar la importación fallida,
+        # que es justamente lo que hay que conservar como rastro.
+        aplicado = not (errores and template_id in _ATOMICOS)
+        if not aplicado:
+            self.db.rollback()
+            logger.warning(
+                f"Importación '{template_id}' revertida: {len(errores)} de {total} "
+                f"filas con error (política todo o nada)"
+            )
+            filas_ok = 0
+
         detalle = "\n".join(errores) if errores else None
         importacion_id = self.repo.registrar_importacion(
             template_id, nombre_archivo, filas_ok, len(errores), detalle, usuario_id
@@ -119,10 +145,11 @@ class ImportacionesService:
         return {
             "importacion_id": importacion_id,
             "template_id": template_id,
-            "total": filas_ok + len(errores),
+            "total": total,
             "filas_ok": filas_ok,
             "filas_error": len(errores),
             "errores": errores,
+            "aplicado": aplicado,
         }
 
     # ── Handlers por template ────────────────────────────────────────────────

@@ -83,9 +83,15 @@ Smoke tests existentes:
 | Script | Cubre | Requiere |
 |---|---|---|
 | `tests/smoke_reportes.py` | Los 3 reportes + dashboard | Solo Docker |
+| `tests/smoke_importaciones.py` | Políticas de error de importación (todo o nada vs parcial) | Solo Docker |
 | `tests/smoke_sync_personal.py` | Sync de personal desde RRHH | Docker + túnel SSH a RRHH |
 
-Ambos hacen `drop_all` sobre la base destino: **nunca apuntarlos a una base real.**
+Todos hacen `drop_all` sobre la base destino: **nunca apuntarlos a una base real.**
+
+> Al sembrar datos en un smoke test, **no pongas IDs explícitos** en tablas donde
+> el código bajo prueba también inserta: la secuencia no avanza y el `INSERT`
+> del service choca contra la PK con un error que no tiene nada que ver con lo
+> que estás probando.
 
 Prueba manual: Swagger en `http://localhost:8000/docs`.
 
@@ -201,6 +207,17 @@ Está definido igual en `entregas_repository`, `personal_repository` y `reportes
 - No existe devolución de EPP sin reemplazo.
 - El carrito de entregas es **una sola transacción**: si una línea no tiene stock suficiente, se revierte completa.
 - Un trabajador desvinculado no puede recibir EPP nuevo, pero sus entregas se conservan y se pueden consultar.
+
+## Políticas de error de las importaciones
+
+`importaciones_service.py` aplica cada fila en su propio savepoint, pero el desenlace depende del template — la constante es `_ATOMICOS`:
+
+| Template | Política | Por qué |
+|---|---|---|
+| `stock_inicial`, `ingreso_stock` | **Todo o nada** | Un ingreso a medias deja el bodegón mintiendo. Y como el ingreso es **aditivo**, reintentar el archivo corregido volvería a sumar las filas que sí habían entrado: nadie recorta el Excel antes del segundo intento |
+| `productos_epp`, `entregas_historicas` | **Parcial** | Cargar 28 de 30 productos y corregir dos es más cómodo que rehacer el archivo, y el catálogo tolera estar incompleto un rato |
+
+Cuando se revierte, la respuesta trae `aplicado: false` y `filas_ok: 0`, pero **la importación igual se registra** en `importaciones` — el rastro del intento fallido es lo que hay que conservar. La UI muestra "No se aplicó ningún cambio" en vez del conteo parcial.
 
 ## Autenticación
 
