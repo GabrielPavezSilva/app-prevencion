@@ -1,3 +1,21 @@
+# Stack de PRODUCCIÓN — http://prcivot.cramer.cl
+#
+#   docker compose up -d
+#
+# El TLS y el registro A de prcivot.cramer.cl se gestionan fuera de este stack
+# (nginx/Caddy del host, o el edge de Cramer). Este compose publica un único
+# puerto en loopback — 127.0.0.1:8082, configurable con HTTP_PORT — que ese
+# proxy debe reenviar (ojo con no chocar con el stack de lavandería del VPS):
+#
+#   proxy_pass http://127.0.0.1:8082;
+#   proxy_set_header Host              $host;
+#   proxy_set_header X-Forwarded-Proto $scheme;   # <- imprescindible
+#
+# X-Forwarded-Proto importa porque la cookie de sesión sale con Secure=True en
+# producción: sin HTTPS efectivo en el navegador, el login no persiste.
+
+name: prevencion
+
 services:
 
   # ── Base de datos PostgreSQL ─────────────────────────────────────────────
@@ -7,7 +25,7 @@ services:
     environment:
       POSTGRES_DB:       ${POSTGRES_DB:-civot}
       POSTGRES_USER:     ${POSTGRES_USER:-civot}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en .env}
       TZ:                America/Santiago
       PGTZ:              America/Santiago
     command: ["postgres", "-c", "timezone=America/Santiago"]
@@ -21,6 +39,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    # Solo loopback: es el extremo remoto del túnel SSH que usa compose.dev.yml
+    # para trabajar en local contra estos datos. Nunca exponerlo a 0.0.0.0.
     ports:
       - "127.0.0.1:5433:5432"
     labels:
@@ -38,9 +58,12 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-civot}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-civot}
-      JWT_SECRET_KEY:    ${JWT_SECRET_KEY}
+      JWT_SECRET_KEY:     ${JWT_SECRET_KEY:?falta JWT_SECRET_KEY en .env}
       JWT_EXPIRE_MINUTES: 480
-      ENVIRONMENT:       ${ENVIRONMENT:-production}
+      ENVIRONMENT:        ${ENVIRONMENT:-production}
+      # El SPA se sirve desde el mismo origen (nginx enruta /api), así que el
+      # navegador no hace CORS. Se deja configurable por si algún día se separa.
+      CORS_ORIGINS:       ${CORS_ORIGINS:-http://prcivot.cramer.cl,https://prcivot.cramer.cl}
       # Base de RRHH (fuente del sync de personal). El software corre en el
       # mismo servidor que esa base, así que no hace falta túnel: apunta al
       # host de Docker. En local se usa el túnel SSH en el puerto 5434.
@@ -56,6 +79,12 @@ services:
         condition: service_healthy
     networks:
       - internal
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     labels:
       ofelia.enabled: "true"
       # Sincronización diaria de personal desde RRHH (Fase 4), 04:00.
@@ -64,13 +93,16 @@ services:
       ofelia.job-exec.sync-personal.command: "python sync_personal.py"
 
   # ── Frontend React (SPA estática servida por Nginx) ──────────────────────
+  # La imagen debe construirse con VITE_API_URL=/api (secreto del workflow de
+  # deploy): el SPA pega al mismo origen y nginx enruta. Con una URL absoluta
+  # el navegador haría CORS contra sí mismo.
   frontend:
     image: ghcr.io/gabrielpavezsilva/prevencion-frontend:latest
     restart: unless-stopped
     networks:
       - internal
 
-  # ── Scheduler de tareas (backups, etc.) ─────────────────────────────────
+  # ── Scheduler de tareas (backups, sync de personal) ─────────────────────
   ofelia:
     image: mcuadros/ofelia:latest
     restart: unless-stopped
@@ -83,12 +115,12 @@ services:
       - internal
     command: daemon --docker
 
-  # ── Nginx reverse proxy (routing) ───────────────────────────────────────
+  # ── Nginx reverse proxy (routing interno del stack) ─────────────────────
   nginx:
     image: nginx:1.27-alpine
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8082:80"
+      - "127.0.0.1:${HTTP_PORT:-8082}:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:

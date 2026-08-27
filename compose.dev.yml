@@ -1,0 +1,87 @@
+# Stack de DESARROLLO LOCAL — backend y frontend con hot-reload, apuntando a la
+# base de PRODUCCIÓN del VPS a través de un túnel SSH.
+#
+#   docker compose -f compose.dev.yml up --build
+#
+#   Backend  → http://localhost:8000  (Swagger en /docs)
+#   Frontend → http://localhost:5173
+#
+# ── ADVERTENCIA ──────────────────────────────────────────────────────────────
+# Esto escribe sobre datos reales. No hay migraciones: el backend corre
+# `Base.metadata.create_all` al arrancar (idempotente, solo crea tablas que
+# faltan, nunca altera ni borra), pero todo lo que hagas desde la UI —
+# entregas, ajustes de stock, sync de personal — queda en producción.
+# Para trabajar sin ese riesgo, levantá el postgres local `pg-prevencion` y
+# poné DEV_DB_HOST/DEV_DB_PORT apuntando ahí (ver más abajo).
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# ── Túneles SSH (dejarlos corriendo en otras terminales) ─────────────────────
+#
+#   # Base de la app en producción (compose.yml la publica en 127.0.0.1:5433)
+#   ssh -N -L 5433:localhost:5433 <usuario>@<vps>
+#
+#   # Base de RRHH, solo si vas a probar el sync de personal
+#   ssh -N -L 5434:localhost:5432 <usuario>@192.9.200.12
+#
+# Los contenedores llegan al túnel por `host.docker.internal`, que se resuelve
+# al host gracias a `extra_hosts`. Los puertos van en variables por si el
+# túnel se abre en otro número o querés apuntar al postgres local.
+#
+# Variables: se leen de .env (el mismo del stack) o del entorno. Las de la BD
+# tienen default para el caso "túnel con la config de arriba".
+
+name: prevencion-dev
+
+services:
+
+  # ── Backend FastAPI con --reload ─────────────────────────────────────────
+  backend:
+    build:
+      context: ./Backend
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-civot}:${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en .env}@${DEV_DB_HOST:-host.docker.internal}:${DEV_DB_PORT:-5433}/${POSTGRES_DB:-civot}
+      JWT_SECRET_KEY:     ${JWT_SECRET_KEY:-dev-secret-no-usar-en-produccion}
+      JWT_EXPIRE_MINUTES: 480
+      # development ⇒ cookie sin Secure (hay HTTP plano) y Swagger habilitado.
+      ENVIRONMENT:  development
+      CORS_ORIGINS: http://localhost:5173
+      PYTHONUNBUFFERED: "1"
+      # Sync de personal: apunta al segundo túnel. Sin usuario/password el
+      # endpoint responde 503 en vez de fallar feo.
+      EMPLOYEES_DB_HOST:     ${EMPLOYEES_DB_HOST_DEV:-host.docker.internal}
+      EMPLOYEES_DB_PORT:     ${EMPLOYEES_DB_PORT_DEV:-5434}
+      EMPLOYEES_DB_NAME:     ${EMPLOYEES_DB_NAME:-rh_cramer}
+      EMPLOYEES_DB_USER:     ${EMPLOYEES_DB_USER:-}
+      EMPLOYEES_DB_PASSWORD: ${EMPLOYEES_DB_PASSWORD:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Código en vivo. `venv/` se excluye: es un venv de Windows, no sirve
+      # dentro del contenedor y hace lentísimo el bind mount.
+      - ./Backend:/app
+      - /app/venv
+    ports:
+      - "8000:8000"
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # ── Frontend Vite dev server ─────────────────────────────────────────────
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    environment:
+      # El SPA pega directo al backend; no hay nginx en desarrollo.
+      VITE_API_URL: http://localhost:8000/api
+    volumes:
+      - ./Frontend:/app
+      # node_modules en volumen propio: los binarios de esbuild/rollup son
+      # nativos y los de Windows no corren en Alpine.
+      - frontend_node_modules:/app/node_modules
+    ports:
+      - "5173:5173"
+    # --host para que Vite escuche fuera del contenedor.
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - backend
+
+volumes:
+  frontend_node_modules:
