@@ -19,3 +19,14 @@ export const crearSustitucion = (payload) => apiClient.post('/entregas/sustituci
 
 // EPP vigentes de un trabajador
 export const getVigentes = (rut) => apiClient.get(`/entregas/trabajador/${encodeURIComponent(rut)}`);
+
+// Abre en una pestaña nueva el PDF del acta firmada que quedó guardada.
+// Va por apiClient y no por un <a href> porque la sesión viaja en la cookie y
+// el endpoint exige autenticación.
+export const abrirActa = async (actaId) => {
+    const blob = await apiClient.get(`/entregas/acta/${actaId}`, { responseType: 'blob' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank', 'noopener');
+    // ponytail: se revoca a los 60 s en vez de rastrear el cierre de la pestaña.
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+};

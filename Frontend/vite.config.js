@@ -3,6 +3,13 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  server: {
+    // Docker Desktop en Windows no propaga eventos inotify a través del bind
+    // mount, así que el watcher nativo nunca ve los cambios y Vite sigue
+    // sirviendo el archivo viejo desde su caché de transformación. Con polling
+    // el hot-reload funciona; fuera de Docker cuesta un poco de CPU y nada más.
+    watch: { usePolling: true, interval: 300 },
+  },
   plugins: [
     react(),
     VitePWA({

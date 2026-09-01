@@ -6,7 +6,8 @@ Fase 1: modelo de datos del dominio EPP. Reemplaza el dominio de lavandería
 (prendas con RFID) por stock de EPP por cantidades + libro mayor de movimientos.
 """
 from sqlalchemy import (
-    Column, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
+    Column, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint,
+    LargeBinary
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -254,7 +255,10 @@ class EntregaEpp(Base):
     cantidad = Column(Integer, nullable=False, default=1)
     motivo = Column(String(20), nullable=False)   # NUEVA | PERDIDA | DANO
     entrega_reemplazada_id = Column(Integer, ForeignKey("entregas_epp.entrega_id"), nullable=True)
-    estado_firma = Column(String(20), default="PENDIENTE")  # PENDIENTE | FIRMADA (futuro Buk)
+    estado_firma = Column(String(20), default="PENDIENTE")  # PENDIENTE | FIRMADA
+    # Acta firmada que respalda esta entrega. Es NULL en las entregas cargadas
+    # por importación histórica y en las anteriores a la firma en pantalla.
+    acta_id = Column(Integer, ForeignKey("actas_entrega.acta_id"), nullable=True)
     usuario_entrega = Column(Integer, ForeignKey("usuarios.user_id"), nullable=True)
     observacion = Column(Text, nullable=True)
     fecha_entrega = Column(DateTime, server_default=func.now())
@@ -262,6 +266,26 @@ class EntregaEpp(Base):
     uuid = Column(String(36), unique=True, nullable=True)
 
     persona = relationship("Personal", back_populates="entregas")
+
+
+class ActaEntrega(Base):
+    """
+    Acta firmada de una entrega. Es **una por carrito**, no por línea: el
+    trabajador firma un documento con todos los EPP que recibe en el acto, y
+    las N filas de `entregas_epp` apuntan a ella con `acta_id`.
+
+    El PDF se guarda en la base y no en disco a propósito: entra en el backup
+    de la base sin volumen extra que montar, y un acta pesa ~10 KB.
+    """
+    __tablename__ = "actas_entrega"
+
+    acta_id = Column(Integer, primary_key=True, autoincrement=True)
+    rut = Column(String(20), ForeignKey("personal.rut"), nullable=False)
+    nombre_completo = Column(String(100), nullable=False)   # denormalizado
+    empresa_id = Column(Integer, ForeignKey("empresa.empresa_id"), nullable=True)
+    pdf = Column(LargeBinary, nullable=False)
+    usuario_id = Column(Integer, ForeignKey("usuarios.user_id"), nullable=True)
+    fecha_creacion = Column(DateTime, server_default=func.now())
 
 
 class Importacion(Base):

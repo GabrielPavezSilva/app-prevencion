@@ -14,6 +14,7 @@ estaba en terreno), por eso se registra pero no descuenta stock_epp.
 """
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from app.services.acta_pdf import construir_acta
 from typing import List, Optional, Dict, Any
 from app.core.logging_config import logger
 
@@ -30,12 +31,15 @@ class EntregasRepository:
         desvinculado (soft-delete del sync de RRHH) puede tener EPP sin devolver
         y hay que poder verlos, aunque no se le pueda entregar nada nuevo.
         """
-        filtro_activo = " AND COALESCE(activo, TRUE) = TRUE" if solo_activos else ""
+        filtro_activo = " AND COALESCE(p.activo, TRUE) = TRUE" if solo_activos else ""
         row = self.db.execute(
             text(f"""
-                SELECT rut, nombre_completo, empresa_id, COALESCE(activo, TRUE) AS activo
-                FROM personal
-                WHERE rut = :rut{filtro_activo}
+                SELECT p.rut, p.nombre_completo, p.empresa_id, p.cargo,
+                       e.nombre_empresa AS empresa,
+                       COALESCE(p.activo, TRUE) AS activo
+                FROM personal p
+                LEFT JOIN empresa e ON e.empresa_id = p.empresa_id
+                WHERE p.rut = :rut{filtro_activo}
             """),
             {"rut": rut},
         ).mappings().fetchone()
@@ -65,7 +69,7 @@ class EntregasRepository:
                e.producto_id, p.nombre AS nombre_producto,
                e.talla_id, t.nombre_talla,
                e.cantidad, e.motivo, e.entrega_reemplazada_id,
-               e.estado_firma, e.usuario_entrega, e.observacion, e.fecha_entrega
+               e.estado_firma, e.acta_id, e.usuario_entrega, e.observacion, e.fecha_entrega
         FROM entregas_epp e
         LEFT JOIN productos_epp p ON p.producto_id = e.producto_id
         LEFT JOIN tallas t ON t.talla_id = e.talla_id
@@ -136,8 +140,45 @@ class EntregasRepository:
 
     # ── Operaciones transaccionales ──────────────────────────────────────────
 
+    def crear_acta(self, trabajador: Dict[str, Any], entrega_ids: List[int],
+                   pdf: bytes, usuario_id: Optional[int]) -> int:
+        """
+        Guarda el acta firmada y la vincula a las entregas del carrito.
+
+        Sin commit: la llama `crear_entregas` dentro de su transacción, para que
+        no pueda quedar una entrega registrada sin su acta ni al revés.
+        """
+        acta_id = self.db.execute(
+            text("""
+                INSERT INTO actas_entrega (rut, nombre_completo, empresa_id, pdf, usuario_id)
+                VALUES (:rut, :nombre_completo, :empresa_id, :pdf, :usuario_id)
+                RETURNING acta_id
+            """),
+            {
+                "rut": trabajador["rut"], "nombre_completo": trabajador["nombre_completo"],
+                "empresa_id": trabajador.get("empresa_id"), "pdf": pdf, "usuario_id": usuario_id,
+            },
+        ).scalar()
+        self.db.execute(
+            text("""
+                UPDATE entregas_epp SET acta_id = :acta_id, estado_firma = 'FIRMADA'
+                WHERE entrega_id = ANY(:ids)
+            """),
+            {"acta_id": acta_id, "ids": entrega_ids},
+        )
+        return acta_id
+
+    def get_acta_pdf(self, acta_id: int) -> Optional[Dict[str, Any]]:
+        row = self.db.execute(
+            text("SELECT acta_id, rut, nombre_completo, pdf, fecha_creacion "
+                 "FROM actas_entrega WHERE acta_id = :id"),
+            {"id": acta_id},
+        ).mappings().fetchone()
+        return dict(row) if row else None
+
     def crear_entregas(self, trabajador: Dict[str, Any], lineas: List[Dict[str, Any]],
-                       usuario_id: Optional[int]) -> List[Dict[str, Any]]:
+                       usuario_id: Optional[int],
+                       firma_png: Optional[bytes] = None) -> List[Dict[str, Any]]:
         """
         Carrito de N líneas (motivos NUEVA/PERDIDA) en una sola transacción.
 
@@ -170,8 +211,18 @@ class EntregasRepository:
                     entrega_reemplazada_id=reemplazada_id,
                 )
                 creadas.append(entrega_id)
+            detalles = [self.get_entrega_detalle(i) for i in creadas]
+            # El acta se arma con las filas ya persistidas: así el PDF muestra
+            # exactamente lo que quedó en la base, nombres de producto y talla
+            # incluidos. `firma_png` es opcional solo para los seeds y smokes;
+            # el endpoint la exige.
+            if firma_png:
+                acta_id = self.crear_acta(trabajador, creadas, construir_acta(trabajador, detalles, firma_png), usuario_id)
+                for d in detalles:
+                    d["acta_id"] = acta_id
+                    d["estado_firma"] = "FIRMADA"
             self.db.commit()
-            return [self.get_entrega_detalle(i) for i in creadas]
+            return detalles
         except Exception as e:
             self.db.rollback()
             if not isinstance(e, ValueError):
@@ -199,11 +250,15 @@ class EntregasRepository:
     def crear_sustitucion(self, trabajador: Dict[str, Any], entrega_reemplazada_id: int,
                           producto_id: int, talla_id: Optional[int], cantidad: int,
                           observacion: Optional[str], usuario_id: Optional[int],
-                          uuid: Optional[str]) -> Dict[str, Any]:
+                          uuid: Optional[str],
+                          firma_png: Optional[bytes] = None) -> Dict[str, Any]:
         """
         Sustitución por daño (motivo DANO), transacción única:
           - entrega nueva vinculada a la reemplazada (descuenta stock)
           - movimiento BAJA_DANO del ítem dañado (traza, sin afectar stock)
+          - acta firmada de la entrega de reemplazo
+
+        `firma_png` es opcional solo para seeds y smokes; el endpoint la exige.
         """
         try:
             if uuid:
@@ -235,8 +290,14 @@ class EntregasRepository:
                     "observacion": observacion or f"Baja por daño (reemplaza entrega {entrega_reemplazada_id})",
                 },
             )
+            detalle = self.get_entrega_detalle(entrega_id)
+            if firma_png:
+                acta_id = self.crear_acta(
+                    trabajador, [entrega_id], construir_acta(trabajador, [detalle], firma_png), usuario_id)
+                detalle["acta_id"] = acta_id
+                detalle["estado_firma"] = "FIRMADA"
             self.db.commit()
-            return self.get_entrega_detalle(entrega_id)
+            return detalle
         except Exception as e:
             self.db.rollback()
             if not isinstance(e, ValueError):

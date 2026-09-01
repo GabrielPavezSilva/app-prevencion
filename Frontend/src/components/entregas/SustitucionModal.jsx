@@ -88,7 +88,7 @@ const SustitucionModal = ({ entregaReemplazada, productos = [], tallas = [], onG
                             Cancelar
                         </button>
                         <button type="submit" className="catalogo-btn catalogo-btn--primary" disabled={guardando}>
-                            {guardando ? 'Guardando...' : 'Confirmar sustitución'}
+                            {guardando ? 'Guardando...' : 'Continuar al acta'}
                         </button>
                     </div>
                 </form>

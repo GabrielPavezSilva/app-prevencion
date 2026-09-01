@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import { searchEmployees } from "../services/staffService";
-import { getProductos } from "../services/eppService";
+import { getProductos, getStock } from "../services/eppService";
 import { getTallas } from "../services/catalogosService";
-import { getEntregas, crearEntregas, crearSustitucion, getVigentes } from "../services/entregasService";
+import { getEntregas, crearEntregas, crearSustitucion, getVigentes, abrirActa } from "../services/entregasService";
 import SustitucionModal from "../components/entregas/SustitucionModal";
+import ActaEntrega from "../components/entregas/ActaEntrega";
 import DataTable from "../components/common/DataTable";
 import "./Page.css";
 import "./Inventory.css";
@@ -15,7 +16,19 @@ const MOTIVOS = [
   { v: "PERDIDA", label: "Reposición por pérdida" },
 ];
 
+// El acta necesita etiquetar también el motivo DANO, que no se ofrece en el
+// selector de la entrega directa (va por el modal de sustitución).
+const MOTIVOS_ACTA = [...MOTIVOS, { v: "DANO", label: "Sustitución por daño" }];
+
 const itemLabel = (nombre, talla) => [nombre, talla].filter(Boolean).join(" · ");
+
+// Clave de stock por producto+talla. Los productos sin talla guardan talla_id
+// NULL, así que se normaliza a "0" para no perder la fila en el Map.
+const claveStock = (producto_id, talla_id) => `${producto_id}:${talla_id ?? 0}`;
+
+// Sufijo sutil para el <option>: los <option> no aceptan estilos de forma
+// confiable entre navegadores, así que el stock viaja en el texto.
+const sufijoStock = (cant) => (cant > 0 ? ` · ${cant} en stock` : " · sin stock");
 
 // ── Tab: Registrar entrega ────────────────────────────────────────────────────
 const TabRegistrar = () => {
@@ -26,6 +39,7 @@ const TabRegistrar = () => {
 
   const [productos, setProductos] = useState([]);
   const [tallas, setTallas] = useState([]);
+  const [stock, setStock] = useState([]);
 
   const [carrito, setCarrito] = useState([]);
   const [addProd, setAddProd] = useState("");
@@ -40,16 +54,35 @@ const TabRegistrar = () => {
   const [vigentes, setVigentes] = useState([]);
   const [loadingVig, setLoadingVig] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
+  const [firmando, setFirmando] = useState(false);   // acta abierta esperando firma
 
   const [sustituyendo, setSustituyendo] = useState(null);
   const [guardandoSus, setGuardandoSus] = useState(false);
   const [errorSus, setErrorSus] = useState("");
+  const [susPendiente, setSusPendiente] = useState(null);   // datos esperando firma
+
+  const cargarStock = useCallback(async () => {
+    try { setStock(await getStock()); }
+    catch { setStock([]); }
+  }, []);
 
   useEffect(() => {
     Promise.all([getProductos({ activo: true }), getTallas()])
       .then(([p, t]) => { setProductos(p); setTallas(t); })
       .catch(() => {});
-  }, []);
+    cargarStock();
+  }, [cargarStock]);
+
+  // Stock por producto+talla, y el total por producto para el selector de producto.
+  const stockPorTalla = useMemo(
+    () => new Map(stock.map((s) => [claveStock(s.producto_id, s.talla_id), s.cantidad_actual])),
+    [stock]
+  );
+  const stockPorProducto = useMemo(() => {
+    const m = new Map();
+    for (const s of stock) m.set(s.producto_id, (m.get(s.producto_id) ?? 0) + s.cantidad_actual);
+    return m;
+  }, [stock]);
 
   // RUT precargado desde el modal de EPP de la página Personal
   const location = useLocation();
@@ -127,41 +160,84 @@ const TabRegistrar = () => {
 
   const quitarLinea = (i) => setCarrito((c) => c.filter((_, idx) => idx !== i));
 
-  const confirmar = async () => {
+  const confirmar = async (firma) => {
     if (carrito.length === 0) return;
     setConfirmando(true);
     try {
-      await crearEntregas({
+      const creadas = await crearEntregas({
         rut: trabajador.rut,
+        firma,
         lineas: carrito.map((l) => ({
           producto_id: l.producto_id, talla_id: l.talla_id,
           cantidad: l.cantidad, motivo: l.motivo,
           entrega_reemplazada_id: l.entrega_reemplazada_id,
         })),
       });
-      toast.success(`Entrega registrada (${carrito.length} ítem${carrito.length > 1 ? "s" : ""})`);
+      // El acta ya quedó guardada en el servidor; el enlace es solo para verla
+      // en el momento, no es el único ejemplar.
+      const actaId = creadas?.[0]?.acta_id;
+      toast.success((t) => (
+        <span>
+          Entrega registrada ({carrito.length} ítem{carrito.length > 1 ? "s" : ""}).
+          {actaId && (
+            <button className="catalogo-btn catalogo-btn--edit" style={{ marginLeft: 10 }}
+              onClick={() => { abrirActa(actaId); toast.dismiss(t.id); }}>Ver acta</button>
+          )}
+        </span>
+      ), { duration: 8000 });
+      setFirmando(false);
       setCarrito([]);
       cargarVigentes(trabajador.rut);
+      cargarStock();
     } catch (err) {
       toast.error(err.message || "Error al registrar la entrega");
     } finally { setConfirmando(false); }
   };
 
-  const guardarSustitucion = async (data) => {
+  // La sustitución también entrega EPP, así que también necesita acta firmada:
+  // el modal de sustitución solo arma los datos y el acta los confirma.
+  const guardarSustitucion = (data) => { setErrorSus(""); setSusPendiente(data); };
+
+  const confirmarSustitucion = async (firma) => {
     setGuardandoSus(true); setErrorSus("");
     try {
-      await crearSustitucion({
+      const creada = await crearSustitucion({
         rut: trabajador.rut,
         entrega_reemplazada_id: sustituyendo.entrega_id,
-        ...data,
+        firma,
+        ...susPendiente,
       });
-      toast.success("Sustitución registrada");
+      toast.success((t) => (
+        <span>
+          Sustitución registrada.
+          {creada?.acta_id && (
+            <button className="catalogo-btn catalogo-btn--edit" style={{ marginLeft: 10 }}
+              onClick={() => { abrirActa(creada.acta_id); toast.dismiss(t.id); }}>Ver acta</button>
+          )}
+        </span>
+      ), { duration: 8000 });
+      setSusPendiente(null);
       setSustituyendo(null);
       cargarVigentes(trabajador.rut);
+      cargarStock();
     } catch (err) {
+      // El acta se cierra y el error vuelve al modal de sustitución, que es
+      // donde el usuario puede corregir producto, talla o cantidad.
+      setSusPendiente(null);
       setErrorSus(err.message || "Error en la sustitución");
     } finally { setGuardandoSus(false); }
   };
+
+  // Línea que muestra el acta de la sustitución pendiente de firma.
+  const lineasSustitucion = useMemo(() => {
+    if (!susPendiente) return [];
+    const prod = productos.find((p) => p.producto_id === susPendiente.producto_id);
+    const talla = tallas.find((t) => t.TallaID === susPendiente.talla_id);
+    return [{
+      nombre: prod?.nombre, nombre_talla: talla?.nombreTalla ?? null,
+      cantidad: susPendiente.cantidad, motivo: "DANO",
+    }];
+  }, [susPendiente, productos, tallas]);
 
   return (
     <div>
@@ -217,12 +293,21 @@ const TabRegistrar = () => {
                 <select className="modal-input" value={addProd}
                   onChange={(e) => { setAddProd(e.target.value); setAddTalla(""); }}>
                   <option value="">— Producto —</option>
-                  {productos.map((p) => <option key={p.producto_id} value={p.producto_id}>{p.nombre}</option>)}
+                  {productos.map((p) => (
+                    <option key={p.producto_id} value={p.producto_id}>
+                      {p.nombre}{sufijoStock(stockPorProducto.get(p.producto_id) ?? 0)}
+                    </option>
+                  ))}
                 </select>
                 {prodSel?.talla_aplica && (
                   <select className="modal-input" value={addTalla} onChange={(e) => setAddTalla(e.target.value)}>
                     <option value="">— Talla —</option>
-                    {tallas.map((t) => <option key={t.TallaID} value={t.TallaID}>{t.nombreTalla}</option>)}
+                    {tallas.map((t) => (
+                      <option key={t.TallaID} value={t.TallaID}>
+                        {t.nombreTalla}
+                        {sufijoStock(stockPorTalla.get(claveStock(Number(addProd), t.TallaID)) ?? 0)}
+                      </option>
+                    ))}
                   </select>
                 )}
                 <div style={{ display: "flex", gap: 8 }}>
@@ -277,8 +362,8 @@ const TabRegistrar = () => {
                   ))}
                   <div style={{ padding: 12 }}>
                     <button className="catalogo-btn catalogo-btn--primary" style={{ width: "100%" }}
-                      onClick={confirmar} disabled={confirmando}>
-                      {confirmando ? "Registrando…" : `Confirmar entrega (${carrito.length})`}
+                      onClick={() => setFirmando(true)} disabled={confirmando}>
+                      {`Revisar y firmar acta (${carrito.length})`}
                     </button>
                   </div>
                 </div>
@@ -313,7 +398,18 @@ const TabRegistrar = () => {
         </div>
       )}
 
-      {sustituyendo && (
+      {firmando && trabajador && (
+        <ActaEntrega trabajador={trabajador} lineas={carrito} motivos={MOTIVOS_ACTA}
+          onConfirmar={confirmar} onCerrar={() => setFirmando(false)} confirmando={confirmando} />
+      )}
+
+      {susPendiente && trabajador && (
+        <ActaEntrega trabajador={trabajador} lineas={lineasSustitucion} motivos={MOTIVOS_ACTA}
+          onConfirmar={confirmarSustitucion} onCerrar={() => setSusPendiente(null)}
+          confirmando={guardandoSus} />
+      )}
+
+      {sustituyendo && !susPendiente && (
         <SustitucionModal entregaReemplazada={sustituyendo} productos={productos} tallas={tallas}
           onGuardar={guardarSustitucion}
           onCerrar={() => { if (!guardandoSus) setSustituyendo(null); }}
@@ -346,6 +442,11 @@ const TabHistorial = () => {
     { accessorKey: "cantidad", header: "Cant.", meta: { align: "right" } },
     { accessorKey: "motivo", header: "Motivo", meta: { align: "center", filter: "select" } },
     { accessorKey: "estado_firma", header: "Firma", meta: { align: "center" } },
+    { id: "acta", header: "Acta", enableSorting: false, meta: { align: "center" },
+      cell: ({ row }) => row.original.acta_id
+        ? <button className="catalogo-btn catalogo-btn--edit"
+            onClick={() => abrirActa(row.original.acta_id)}>PDF</button>
+        : <span style={{ color: "var(--color-text-muted)" }}>—</span> },
   ];
 
   return (
