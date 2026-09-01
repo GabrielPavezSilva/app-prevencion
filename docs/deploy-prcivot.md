@@ -100,11 +100,14 @@ docker compose exec backend python seed_modulos.py
 ## Desarrollo local contra la base de producción
 
 `compose.dev.yml` no levanta PostgreSQL: se conecta al que expone el stack de
-producción en `127.0.0.1:5433`, alcanzado por un túnel SSH.
+producción en el VPS, alcanzado por un túnel SSH. El puerto remoto es el
+`DB_HOST_PORT` del VPS — **hoy `5435`**, no `5433`: ese lo tiene tomado otro
+postgres del servidor. El lado local del túnel sigue siendo `5433`, que es lo
+que espera `DEV_DB_PORT`.
 
 ```bash
-# terminal 1 — túnel a la BD de la app en el VPS
-ssh -N -L 5433:localhost:5433 <usuario>@<vps>
+# terminal 1 — túnel a la BD de la app en el VPS (remoto 5435, local 5433)
+ssh -N -L 5433:localhost:5435 <usuario>@<vps>
 
 # terminal 2 — túnel a RRHH, solo si vas a probar el sync de personal
 ssh -N -L 5434:localhost:5432 <usuario>@192.9.200.12
