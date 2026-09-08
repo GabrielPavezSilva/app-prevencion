@@ -60,7 +60,11 @@ jobs:
 
   deploy:
     name: Deploy on VPS
-    runs-on: self-hosted
+    # La label `prevencion` es del runner de ESTE proyecto. Con `self-hosted` a
+    # secas el job podia caer en el runner de otro repositorio del mismo dueno y
+    # reiniciar el stack equivocado, que es el mismo accidente que evita
+    # DEPLOY_DIR mas abajo.
+    runs-on: [self-hosted, prevencion]
     needs: build
 
     steps:
