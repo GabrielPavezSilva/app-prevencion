@@ -42,6 +42,21 @@ def descargar_acta(acta_id: int, db: Session = Depends(get_mysql_db),
     )
 
 
+@router.get("/acta-maestra/{rut}")
+def descargar_acta_maestra(rut: str, db: Session = Depends(get_mysql_db),
+                           _: dict = Depends(get_current_user)):
+    """
+    Documento maestro del trabajador: todas sus entregas firmadas en un solo
+    PDF, con la firma de cada una. Se genera al vuelo, no se guarda.
+    """
+    maestra = EntregasService(db).get_acta_maestra_pdf(rut)
+    nombre = f"registro-epp-{rut}.pdf"
+    return Response(
+        content=maestra["pdf"], media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{nombre}"'},
+    )
+
+
 @router.post("/sustitucion", response_model=EntregaResponse)
 def crear_sustitucion(payload: SustitucionCreate, db: Session = Depends(get_mysql_db),
                       current_user: dict = Depends(require_module("entregas"))):

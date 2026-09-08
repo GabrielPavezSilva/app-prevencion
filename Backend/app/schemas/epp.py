@@ -25,6 +25,7 @@ class ProductoCreate(BaseModel):
     talla_aplica: bool = False
     certificacion: Optional[str] = None
     descripcion: Optional[str] = None
+    vida_util_meses: Optional[int] = None
 
 
 class ProductoUpdate(BaseModel):
@@ -34,6 +35,7 @@ class ProductoUpdate(BaseModel):
     talla_aplica: Optional[bool] = None
     certificacion: Optional[str] = None
     descripcion: Optional[str] = None
+    vida_util_meses: Optional[int] = None
     activo: Optional[bool] = None
 
 
@@ -45,6 +47,7 @@ class ProductoResponse(BaseModel):
     talla_aplica: bool
     certificacion: Optional[str] = None
     descripcion: Optional[str] = None
+    vida_util_meses: Optional[int] = None
     activo: bool
 
 

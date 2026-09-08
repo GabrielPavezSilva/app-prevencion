@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Optional
 from app.repositories.entregas_repository import EntregasRepository
 from app.repositories.epp_repository import EppRepository
 from app.schemas.entregas import MOTIVOS_ENTREGA
-from app.services.acta_pdf import firma_desde_data_url
+from app.services.acta_pdf import firma_desde_data_url, construir_acta_maestra
 
 
 class EntregasService:
@@ -98,6 +98,16 @@ class EntregasService:
         if not acta:
             raise HTTPException(status_code=404, detail=f"Acta {acta_id} no encontrada")
         return acta
+
+    def get_acta_maestra_pdf(self, rut: str) -> Dict[str, Any]:
+        """
+        Documento maestro del trabajador. Se arma al vuelo con todas sus
+        entregas firmadas: cada entrega nueva aparece sin reescribir nada, y no
+        hay forma de que el archivo pierda registros anteriores.
+        """
+        trabajador = self._get_trabajador(rut, solo_activos=False)
+        filas = self.repo.get_entregas_firmadas(rut)
+        return {"trabajador": trabajador, "pdf": construir_acta_maestra(trabajador, filas)}
 
     def listar_vigentes(self, rut: str) -> List[Dict[str, Any]]:
         # Consulta de lectura: incluye desvinculados, que son justamente los que

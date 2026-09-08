@@ -3,10 +3,16 @@ Generación del PDF del acta de entrega de EPP.
 
 Infraestructura sin dominio, igual que `excel_builder`: recibe datos ya
 resueltos y devuelve bytes. No toca la base.
+
+Dos documentos, un mismo formato de tabla:
+  - `construir_acta`: el acta del carrito que se firma en el momento.
+  - `construir_acta_maestra`: el documento maestro del trabajador, con todas
+    sus entregas firmadas históricas. No se guarda: se regenera desde la base
+    cada vez que se pide, así nunca hay un archivo que se quede atrás.
 """
 import io
 import base64
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from typing import List, Dict, Any, Optional
 from zoneinfo import ZoneInfo
 
@@ -15,6 +21,11 @@ from fpdf import FPDF
 TZ_CHILE = ZoneInfo("America/Santiago")
 
 MOTIVO_LABEL = {"NUEVA": "Nueva", "PERDIDA": "Reposición por pérdida", "DANO": "Sustitución por daño"}
+
+# Descripción, Tipo, Talla, Entrega, Recambio, Cant., Firma (mm; 190 útiles en A4)
+COL_ANCHOS = (46, 32, 14, 23, 27, 14, 34)
+COL_TITULOS = ("Descripción EPP", "Tipo de EPP", "Talla", "Fecha de entrega",
+               "Fecha probable de recambio", "Cantidad", "Firma")
 
 
 def firma_desde_data_url(data_url: str) -> bytes:
@@ -38,70 +49,134 @@ def firma_desde_data_url(data_url: str) -> bytes:
     return png
 
 
+def _fecha_recambio(entrega: Any, meses: Optional[int]) -> str:
+    """
+    Fecha probable de recambio = fecha de entrega + la vida útil del producto.
+
+    Sin vida útil definida en el catálogo no se inventa nada: la celda queda en
+    blanco antes que mostrar una fecha que nadie fijó.
+    """
+    if not meses or not isinstance(entrega, (datetime, date)):
+        return "-"
+    base = entrega.date() if isinstance(entrega, datetime) else entrega
+    # timedelta no sabe de meses; 30 días es la aproximación de siempre en el
+    # rubro y basta para una fecha "probable".
+    return (base + timedelta(days=30 * int(meses))).strftime("%d-%m-%Y")
+
+
+def _fmt_fecha(valor: Any) -> str:
+    if isinstance(valor, (datetime, date)):
+        return valor.strftime("%d-%m-%Y")
+    return "-"
+
+
+def _encabezado(pdf: FPDF, trabajador: Dict[str, Any], titulo: str, fecha: datetime) -> None:
+    pdf.set_font("Helvetica", "B", 15)
+    pdf.cell(0, 10, titulo, new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 8, "Antecedentes Generales", new_x="LMARGIN", new_y="NEXT")
+
+    def par(et_izq: str, val_izq: Any, et_der: str, val_der: Any) -> None:
+        for ancho_et, ancho_val, etiqueta, valor in (
+            (38, 57, et_izq, val_izq), (20, 75, et_der, val_der),
+        ):
+            pdf.set_font("Helvetica", "", 10)
+            pdf.cell(ancho_et, 6, f"{etiqueta}:")
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.cell(ancho_val, 6, str(valor or "-"))
+        pdf.ln(6)
+
+    par("Persona Trabajadora", trabajador.get("nombre_completo"), "Rut", trabajador.get("rut"))
+    par("Cargo", trabajador.get("cargo"), "Área", trabajador.get("nombre_area"))
+    par("Empresa", trabajador.get("empresa"), "Emitido", fecha.strftime("%d-%m-%Y %H:%M"))
+    pdf.ln(4)
+
+
+def _tabla(pdf: FPDF, filas: List[Dict[str, Any]]) -> None:
+    """
+    Tabla por filas y celdas: la última columna lleva el PNG de la firma
+    ajustado al ancho de su celda (`img_fill_width`), que es lo que permite
+    que cada registro conserve la firma con la que se recibió.
+
+    Cada fila es un dict con: nombre_producto, nombre_categoria, nombre_talla,
+    fecha_entrega, vida_util_meses, cantidad, firma (bytes o None).
+    """
+    pdf.set_font("Helvetica", "", 8)
+    with pdf.table(col_widths=COL_ANCHOS, line_height=5, first_row_as_headings=True,
+                   text_align=("LEFT", "LEFT", "CENTER", "CENTER", "CENTER", "CENTER", "CENTER"),
+                   padding=1.5) as tabla:
+        encabezado = tabla.row()
+        for titulo in COL_TITULOS:
+            encabezado.cell(titulo)
+        for f in filas:
+            fila = tabla.row()
+            fila.cell(f.get("nombre_producto") or "-")
+            fila.cell(f.get("nombre_categoria") or "-")
+            fila.cell(f.get("nombre_talla") or "-")
+            fila.cell(_fmt_fecha(f.get("fecha_entrega")))
+            fila.cell(_fecha_recambio(f.get("fecha_entrega"), f.get("vida_util_meses")))
+            fila.cell(str(f.get("cantidad", "")))
+            firma = f.get("firma")
+            if firma:
+                fila.cell(img=io.BytesIO(firma), img_fill_width=True)
+            else:
+                fila.cell("-")
+
+
+def _pie(pdf: FPDF) -> None:
+    pdf.ln(6)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.multi_cell(0, 5, "La persona trabajadora declara haber recibido conforme los elementos "
+                         "de protección personal detallados, y haber sido instruida sobre su uso "
+                         "y conservación. La firma de cada fila corresponde a la recepción de ese "
+                         "elemento.")
+
+
 def construir_acta(trabajador: Dict[str, Any], lineas: List[Dict[str, Any]],
                    firma_png: bytes, fecha: Optional[datetime] = None) -> bytes:
     """
-    Acta de una página: identificación, detalle de EPP y firma del trabajador.
+    Acta del carrito que se acaba de firmar. Todas sus filas llevan la misma
+    firma, que es la que el trabajador acaba de trazar.
+    """
+    fecha = (fecha or datetime.now(TZ_CHILE)).astimezone(TZ_CHILE)
+    filas = [{**l, "firma": firma_png, "fecha_entrega": l.get("fecha_entrega") or fecha}
+             for l in lineas]
 
-    `lineas` son dicts con nombre_producto, nombre_talla, cantidad y motivo.
+    pdf = FPDF(format="A4", unit="mm")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    _encabezado(pdf, trabajador, "Acta de entrega de EPP", fecha)
+    _tabla(pdf, filas)
+    _pie(pdf)
+    return bytes(pdf.output())
+
+
+def construir_acta_maestra(trabajador: Dict[str, Any], filas: List[Dict[str, Any]],
+                           fecha: Optional[datetime] = None) -> bytes:
+    """
+    Documento maestro del trabajador: una fila por entrega firmada, en orden
+    cronológico, cada una con su propia firma.
     """
     fecha = (fecha or datetime.now(TZ_CHILE)).astimezone(TZ_CHILE)
 
     pdf = FPDF(format="A4", unit="mm")
-    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-
-    pdf.set_font("Helvetica", "B", 15)
-    pdf.cell(0, 10, "Acta de entrega de EPP", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(2)
-
-    def dato(etiqueta: str, valor: Any) -> None:
+    _encabezado(pdf, trabajador, "Registro de entrega de EPP", fecha)
+    if filas:
+        _tabla(pdf, filas)
+        _pie(pdf)
+    else:
         pdf.set_font("Helvetica", "", 10)
-        pdf.cell(32, 6, f"{etiqueta}:")
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(0, 6, str(valor or "—"), new_x="LMARGIN", new_y="NEXT")
-
-    dato("Empresa", trabajador.get("empresa"))
-    dato("Trabajador", trabajador.get("nombre_completo"))
-    dato("RUT", trabajador.get("rut"))
-    if trabajador.get("cargo"):
-        dato("Cargo", trabajador["cargo"])
-    dato("Fecha", fecha.strftime("%d-%m-%Y"))
-    dato("Hora", fecha.strftime("%H:%M"))
-    pdf.ln(4)
-
-    anchos = (100, 20, 50)
-    pdf.set_font("Helvetica", "B", 10)
-    for ancho, titulo in zip(anchos, ("Elemento de protección personal", "Cant.", "Tipo de entrega")):
-        pdf.cell(ancho, 7, titulo, border="B")
-    pdf.ln(7)
-
-    pdf.set_font("Helvetica", "", 10)
-    for linea in lineas:
-        nombre = " · ".join(filter(None, [linea.get("nombre_producto"), linea.get("nombre_talla")]))
-        pdf.cell(anchos[0], 7, nombre, border="B")
-        pdf.cell(anchos[1], 7, str(linea.get("cantidad", "")), border="B")
-        pdf.cell(anchos[2], 7, MOTIVO_LABEL.get(linea.get("motivo"), linea.get("motivo", "")), border="B")
-        pdf.ln(7)
-
-    pdf.ln(10)
-    pdf.set_font("Helvetica", "", 9)
-    pdf.multi_cell(0, 5, "El trabajador declara haber recibido conforme los elementos de "
-                         "protección personal detallados, y haber sido instruido sobre su uso "
-                         "y conservación.")
-    pdf.ln(6)
-
-    # La firma se dibuja con ancho fijo; fpdf conserva la proporción.
-    pdf.image(io.BytesIO(firma_png), w=70)
-    pdf.set_font("Helvetica", "", 9)
-    pdf.cell(70, 6, "Firma del trabajador", border="T", align="C")
-
+        pdf.cell(0, 8, "Sin entregas firmadas registradas.", new_x="LMARGIN", new_y="NEXT")
     return bytes(pdf.output())
 
 
 if __name__ == "__main__":
-    # ponytail: autochequeo mínimo — el PDF sale y la validación de firma corta
-    # lo que no es un PNG. Correr con: python -m app.services.acta_pdf
+    # ponytail: autochequeo mínimo — los dos PDF salen, la tabla acepta firma
+    # por fila y la validación corta lo que no es un PNG.
+    # Correr con: python -m app.services.acta_pdf
     png_1x1 = base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
     )
@@ -112,11 +187,28 @@ if __name__ == "__main__":
             raise AssertionError(f"debió rechazar: {malo!r}")
         except ValueError:
             pass
+
+    assert _fecha_recambio(datetime(2026, 1, 1), None) == "-"
+    assert _fecha_recambio(datetime(2026, 1, 1), 6) == "30-06-2026"
+
+    trab = {"empresa": "ACME", "nombre_completo": "Ana Pérez", "rut": "11.111.111-1",
+            "cargo": "Operaria", "nombre_area": "Producción"}
     pdf = construir_acta(
-        {"empresa": "ACME", "nombre_completo": "Ana Pérez", "rut": "11.111.111-1", "cargo": "Operaria"},
-        [{"nombre_producto": "Casco", "nombre_talla": None, "cantidad": 1, "motivo": "NUEVA"},
-         {"nombre_producto": "Guantes", "nombre_talla": "M", "cantidad": 2, "motivo": "PERDIDA"}],
+        trab,
+        [{"nombre_producto": "Casco", "nombre_categoria": "Protección cabeza", "nombre_talla": None,
+          "cantidad": 1, "motivo": "NUEVA", "vida_util_meses": 24},
+         {"nombre_producto": "Guantes", "nombre_categoria": "Protección manos", "nombre_talla": "M",
+          "cantidad": 2, "motivo": "PERDIDA", "vida_util_meses": None}],
         png_1x1,
     )
     assert pdf.startswith(b"%PDF-") and len(pdf) > 800, len(pdf)
+
+    maestro = construir_acta_maestra(trab, [
+        {"nombre_producto": "Casco", "nombre_categoria": "Protección cabeza", "nombre_talla": None,
+         "cantidad": 1, "fecha_entrega": datetime(2026, 1, 5), "vida_util_meses": 24, "firma": png_1x1},
+        {"nombre_producto": "Guantes", "nombre_categoria": "Protección manos", "nombre_talla": "M",
+         "cantidad": 2, "fecha_entrega": datetime(2026, 3, 2), "vida_util_meses": 6, "firma": None},
+    ])
+    assert maestro.startswith(b"%PDF-") and len(maestro) > 800, len(maestro)
+    assert construir_acta_maestra(trab, []).startswith(b"%PDF-")
     print("OK acta_pdf")

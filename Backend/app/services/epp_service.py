@@ -74,6 +74,7 @@ class EppService:
             "talla_aplica": bool(data.get("talla_aplica", False)),
             "certificacion": (data.get("certificacion") or None),
             "descripcion": (data.get("descripcion") or None),
+            "vida_util_meses": data.get("vida_util_meses"),
         }
         return self.repo.create_producto(payload)
 

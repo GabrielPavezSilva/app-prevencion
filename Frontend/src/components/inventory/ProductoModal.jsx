@@ -12,6 +12,7 @@ const ProductoModal = ({ producto, categorias = [], onGuardar, onCerrar, guardan
         talla_aplica: producto?.talla_aplica ?? false,
         certificacion: producto?.certificacion ?? '',
         descripcion: producto?.descripcion ?? '',
+        vida_util_meses: producto?.vida_util_meses ?? '',
         activo: producto?.activo ?? true,
     });
     const [errorLocal, setErrorLocal] = useState('');
@@ -31,6 +32,7 @@ const ProductoModal = ({ producto, categorias = [], onGuardar, onCerrar, guardan
             talla_aplica: form.talla_aplica,
             certificacion: form.certificacion.trim() || null,
             descripcion: form.descripcion.trim() || null,
+            vida_util_meses: form.vida_util_meses === '' ? null : Number(form.vida_util_meses),
             ...(esEdicion ? { activo: form.activo } : {}),
         });
     };
@@ -103,6 +105,22 @@ const ProductoModal = ({ producto, categorias = [], onGuardar, onCerrar, guardan
                             disabled={guardando}
                             placeholder="Opcional"
                         />
+                    </div>
+
+                    <div className="modal-field">
+                        <label className="modal-label">Vida útil (meses)</label>
+                        <input
+                            className="modal-input"
+                            type="number"
+                            min="1"
+                            value={form.vida_util_meses}
+                            onChange={(e) => set('vida_util_meses', e.target.value)}
+                            disabled={guardando}
+                            placeholder="Sin recambio programado"
+                        />
+                        <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                            Define la fecha probable de recambio en el acta de entrega.
+                        </p>
                     </div>
 
                     {esEdicion && (
