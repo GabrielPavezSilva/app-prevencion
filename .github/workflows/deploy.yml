@@ -60,10 +60,16 @@ jobs:
 
   deploy:
     name: Deploy on VPS
-    # La label `prevencion` es del runner de ESTE proyecto. Con `self-hosted` a
-    # secas el job podia caer en el runner de otro repositorio del mismo dueno y
-    # reiniciar el stack equivocado, que es el mismo accidente que evita
-    # DEPLOY_DIR mas abajo.
+    # Apagado mientras el deploy se hace a mano en el VPS: sin la variable
+    # DEPLOY_DIR el job se salta entero. Hoy ademas no hay ningun runner
+    # registrado en este repositorio, asi que sin esta guarda cada merge dejaba
+    # un job encolado ~24 h hasta fallar por timeout.
+    #
+    # Para reactivarlo (requiere admin del repositorio): registrar el runner con
+    # la label `prevencion` y definir DEPLOY_DIR — ver
+    # docs/bootstrap-produccion.md. La label evita que el job caiga en el runner
+    # de otro proyecto del mismo dueno y reinicie el stack equivocado.
+    if: vars.DEPLOY_DIR != ''
     runs-on: [self-hosted, prevencion]
     needs: build
 
@@ -80,16 +86,12 @@ jobs:
 
       # La ruta que había acá apuntaba al checkout de la lavandería
       # (/opt/etl-bd/proyectos-rrhh/lavanderia/app-lavanderia): un deploy de
-      # prevención habría reiniciado el stack de la otra aplicación. Definir la
-      # variable DEPLOY_DIR del repositorio (Settings → Variables) con la ruta
-      # del checkout de prevención en el VPS antes del primer deploy.
+      # prevención habría reiniciado el stack de la otra aplicación. Por eso la
+      # ruta vive en la variable DEPLOY_DIR del repositorio, que ademas es la
+      # que habilita este job.
       - name: Rolling restart
         run: |
           set -e
-          if [ -z "${{ vars.DEPLOY_DIR }}" ]; then
-            echo "Falta la variable DEPLOY_DIR con la ruta del checkout en el VPS."
-            exit 1
-          fi
           cd "${{ vars.DEPLOY_DIR }}"
           docker compose up -d --no-deps --wait backend
           docker compose up -d --no-deps --wait frontend

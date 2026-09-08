@@ -277,6 +277,24 @@ permiso no puede ni generar el token del runner ni crear variables o secretos.
 5. Configurar el `server` de nginx del host y el registro A, según
    `docs/deploy-prcivot.md`.
 
+### Mientras tanto: deploy manual
+
+El job `deploy` está apagado con `if: vars.DEPLOY_DIR != ''`, así que hoy se
+salta y ningún merge deja un job encolado. El job `build` **sí corre**: publica
+`prevencion-backend` y `prevencion-frontend` en GHCR con las etiquetas `latest`
+y el SHA del commit. El deploy se hace a mano en el VPS:
+
+```bash
+cd /opt/prevencion
+git pull
+docker compose pull backend frontend     # baja las imágenes que publicó el CI
+docker compose up -d --no-deps --wait backend frontend
+docker image prune -f
+```
+
+Definir la variable `DEPLOY_DIR` es lo único que vuelve a encender el job
+automático — junto con el runner, sin el cual quedaría encolado igual.
+
 ### Runner self-hosted en un repositorio público
 
 El repositorio es público, y un runner self-hosted en un repo público es el
