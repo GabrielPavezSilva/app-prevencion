@@ -213,7 +213,7 @@ if __name__ == "__main__":
                 FROM entregas_epp GROUP BY motivo ORDER BY motivo
             """)).fetchall()
             print("\nResumen de entregas en la base:")
-            for m, l, u in resumen:
-                print(f"  {m:8} {l:5} líneas  {u:5} unidades")
+            for motivo, lineas, unidades in resumen:
+                print(f"  {motivo:8} {lineas:5} líneas  {unidades:5} unidades")
     finally:
         db.close()

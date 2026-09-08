@@ -308,7 +308,7 @@ class ReportesRepository:
 
     def kpis_entregas(self, filtros: Dict[str, Any]) -> Dict[str, Any]:
         params: Dict[str, Any] = {}
-        sql = f"""
+        sql = """
             SELECT
                 COALESCE(SUM(e.cantidad), 0) AS unidades,
                 COUNT(*)                     AS lineas,

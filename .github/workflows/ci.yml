@@ -4,6 +4,12 @@ on:
   pull_request:
     branches: [main, develop]
 
+# Un push nuevo a la rama del PR cancela el run anterior: el resultado viejo ya
+# no interesa.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint-backend:
     name: Lint Backend

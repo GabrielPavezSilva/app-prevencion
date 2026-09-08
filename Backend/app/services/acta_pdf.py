@@ -140,8 +140,8 @@ def construir_acta(trabajador: Dict[str, Any], lineas: List[Dict[str, Any]],
     firma, que es la que el trabajador acaba de trazar.
     """
     fecha = (fecha or datetime.now(TZ_CHILE)).astimezone(TZ_CHILE)
-    filas = [{**l, "firma": firma_png, "fecha_entrega": l.get("fecha_entrega") or fecha}
-             for l in lineas]
+    filas = [{**linea, "firma": firma_png, "fecha_entrega": linea.get("fecha_entrega") or fecha}
+             for linea in lineas]
 
     pdf = FPDF(format="A4", unit="mm")
     pdf.set_auto_page_break(auto=True, margin=15)

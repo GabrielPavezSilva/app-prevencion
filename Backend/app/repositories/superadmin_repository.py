@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from typing import Optional
-from app.core.logging_config import logger
 
 
 class SuperAdminRepository:

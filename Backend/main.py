@@ -3,7 +3,7 @@ FastAPI Backend - Sistema de Prevención de Riesgos (Gestión de EPP)
 PostgreSQL + SQLAlchemy ORM
 """
 import os
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from slowapi import Limiter, _rate_limit_exceeded_handler

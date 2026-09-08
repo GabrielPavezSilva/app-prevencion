@@ -4,9 +4,19 @@ on:
   push:
     branches: [main]
 
+# Un deploy a la vez: dos pushes seguidos a main lanzaban dos runs en paralelo
+# sobre el mismo VPS y el `compose up` del viejo podia pisar al nuevo. No se
+# cancela el que esta corriendo — un deploy cortado a medias es peor.
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+# El owner va en minusculas a mano: GHCR exige repositorio en minusculas y
+# `github.repository_owner` conserva las mayusculas del usuario, lo que hacia
+# fallar el build con "repository name must be lowercase".
 env:
-  IMAGE_BACKEND: ghcr.io/${{ github.repository_owner }}/prevencion-backend
-  IMAGE_FRONTEND: ghcr.io/${{ github.repository_owner }}/prevencion-frontend
+  IMAGE_BACKEND: ghcr.io/gabrielpavezsilva/prevencion-backend
+  IMAGE_FRONTEND: ghcr.io/gabrielpavezsilva/prevencion-frontend
 
 jobs:
   build:
