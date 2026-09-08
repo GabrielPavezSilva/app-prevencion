@@ -88,7 +88,7 @@ class EppRepository:
 
     _PRODUCTO_SELECT = """
         SELECT p.producto_id, p.nombre, p.categoria_id, c.nombre_categoria,
-               p.talla_aplica, p.certificacion, p.descripcion, p.activo
+               p.talla_aplica, p.certificacion, p.descripcion, p.vida_util_meses, p.activo
         FROM productos_epp p
         LEFT JOIN categorias_epp c ON c.categoria_id = p.categoria_id
     """
@@ -143,9 +143,11 @@ class EppRepository:
             new_id = self.db.execute(
                 text("""
                     INSERT INTO productos_epp
-                        (nombre, categoria_id, talla_aplica, certificacion, descripcion, activo)
+                        (nombre, categoria_id, talla_aplica, certificacion, descripcion,
+                         vida_util_meses, activo)
                     VALUES
-                        (:nombre, :categoria_id, :talla_aplica, :certificacion, :descripcion, TRUE)
+                        (:nombre, :categoria_id, :talla_aplica, :certificacion, :descripcion,
+                         :vida_util_meses, TRUE)
                     RETURNING producto_id
                 """),
                 data,

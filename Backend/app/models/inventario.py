@@ -191,6 +191,9 @@ class ProductoEpp(Base):
     talla_aplica = Column(Boolean, nullable=False, default=False)
     certificacion = Column(String(100), nullable=True)
     descripcion = Column(Text, nullable=True)
+    # Vida util en meses: alimenta la "fecha probable de recambio" del acta.
+    # NULL = el producto no tiene recambio programado.
+    vida_util_meses = Column(Integer, nullable=True)
     activo = Column(Boolean, default=True)
 
     categoria = relationship("CategoriaEpp", back_populates="productos")
@@ -284,6 +287,9 @@ class ActaEntrega(Base):
     nombre_completo = Column(String(100), nullable=False)   # denormalizado
     empresa_id = Column(Integer, ForeignKey("empresa.empresa_id"), nullable=True)
     pdf = Column(LargeBinary, nullable=False)
+    # PNG de la firma, aparte del PDF: el documento maestro del trabajador se
+    # regenera desde la base y necesita la firma de cada acta por separado.
+    firma = Column(LargeBinary, nullable=True)
     usuario_id = Column(Integer, ForeignKey("usuarios.user_id"), nullable=True)
     fecha_creacion = Column(DateTime, server_default=func.now())
 

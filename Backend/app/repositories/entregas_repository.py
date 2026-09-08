@@ -36,9 +36,11 @@ class EntregasRepository:
             text(f"""
                 SELECT p.rut, p.nombre_completo, p.empresa_id, p.cargo,
                        e.nombre_empresa AS empresa,
+                       a.nombre_area,
                        COALESCE(p.activo, TRUE) AS activo
                 FROM personal p
                 LEFT JOIN empresa e ON e.empresa_id = p.empresa_id
+                LEFT JOIN areas a ON a.area_id = p.area_id
                 WHERE p.rut = :rut{filtro_activo}
             """),
             {"rut": rut},
@@ -67,11 +69,13 @@ class EntregasRepository:
     _DETALLE_SELECT = """
         SELECT e.entrega_id, e.rut, e.nombre_completo, e.empresa_id,
                e.producto_id, p.nombre AS nombre_producto,
+               c.nombre_categoria, p.vida_util_meses,
                e.talla_id, t.nombre_talla,
                e.cantidad, e.motivo, e.entrega_reemplazada_id,
                e.estado_firma, e.acta_id, e.usuario_entrega, e.observacion, e.fecha_entrega
         FROM entregas_epp e
         LEFT JOIN productos_epp p ON p.producto_id = e.producto_id
+        LEFT JOIN categorias_epp c ON c.categoria_id = p.categoria_id
         LEFT JOIN tallas t ON t.talla_id = e.talla_id
     """
 
@@ -141,7 +145,8 @@ class EntregasRepository:
     # ── Operaciones transaccionales ──────────────────────────────────────────
 
     def crear_acta(self, trabajador: Dict[str, Any], entrega_ids: List[int],
-                   pdf: bytes, usuario_id: Optional[int]) -> int:
+                   pdf: bytes, usuario_id: Optional[int],
+                   firma: Optional[bytes] = None) -> int:
         """
         Guarda el acta firmada y la vincula a las entregas del carrito.
 
@@ -150,13 +155,14 @@ class EntregasRepository:
         """
         acta_id = self.db.execute(
             text("""
-                INSERT INTO actas_entrega (rut, nombre_completo, empresa_id, pdf, usuario_id)
-                VALUES (:rut, :nombre_completo, :empresa_id, :pdf, :usuario_id)
+                INSERT INTO actas_entrega (rut, nombre_completo, empresa_id, pdf, firma, usuario_id)
+                VALUES (:rut, :nombre_completo, :empresa_id, :pdf, :firma, :usuario_id)
                 RETURNING acta_id
             """),
             {
                 "rut": trabajador["rut"], "nombre_completo": trabajador["nombre_completo"],
-                "empresa_id": trabajador.get("empresa_id"), "pdf": pdf, "usuario_id": usuario_id,
+                "empresa_id": trabajador.get("empresa_id"), "pdf": pdf, "firma": firma,
+                "usuario_id": usuario_id,
             },
         ).scalar()
         self.db.execute(
@@ -167,6 +173,34 @@ class EntregasRepository:
             {"acta_id": acta_id, "ids": entrega_ids},
         )
         return acta_id
+
+    def get_entregas_firmadas(self, rut: str) -> List[Dict[str, Any]]:
+        """
+        Filas del documento maestro del trabajador: todas sus entregas con acta
+        firmada, en orden cronológico, cada una con la firma de su acta.
+
+        Las entregas sin acta (carga histórica por importación) quedan fuera:
+        el maestro es el respaldo firmado, no el historial completo.
+        """
+        filas = self.db.execute(
+            text("""
+                SELECT e.entrega_id, p.nombre AS nombre_producto, c.nombre_categoria,
+                       p.vida_util_meses, t.nombre_talla, e.cantidad, e.motivo,
+                       -- la base guarda UTC y el acta se lee en Chile
+                       ((e.fecha_entrega AT TIME ZONE 'UTC')
+                            AT TIME ZONE 'America/Santiago') AS fecha_entrega,
+                       a.firma
+                FROM entregas_epp e
+                JOIN actas_entrega a ON a.acta_id = e.acta_id
+                LEFT JOIN productos_epp p ON p.producto_id = e.producto_id
+                LEFT JOIN categorias_epp c ON c.categoria_id = p.categoria_id
+                LEFT JOIN tallas t ON t.talla_id = e.talla_id
+                WHERE e.rut = :rut
+                ORDER BY e.fecha_entrega, e.entrega_id
+            """),
+            {"rut": rut},
+        ).mappings().fetchall()
+        return [dict(f) for f in filas]
 
     def get_acta_pdf(self, acta_id: int) -> Optional[Dict[str, Any]]:
         row = self.db.execute(
@@ -217,7 +251,9 @@ class EntregasRepository:
             # incluidos. `firma_png` es opcional solo para los seeds y smokes;
             # el endpoint la exige.
             if firma_png:
-                acta_id = self.crear_acta(trabajador, creadas, construir_acta(trabajador, detalles, firma_png), usuario_id)
+                acta_id = self.crear_acta(trabajador, creadas,
+                                          construir_acta(trabajador, detalles, firma_png),
+                                          usuario_id, firma_png)
                 for d in detalles:
                     d["acta_id"] = acta_id
                     d["estado_firma"] = "FIRMADA"
@@ -293,7 +329,8 @@ class EntregasRepository:
             detalle = self.get_entrega_detalle(entrega_id)
             if firma_png:
                 acta_id = self.crear_acta(
-                    trabajador, [entrega_id], construir_acta(trabajador, [detalle], firma_png), usuario_id)
+                    trabajador, [entrega_id], construir_acta(trabajador, [detalle], firma_png),
+                    usuario_id, firma_png)
                 detalle["acta_id"] = acta_id
                 detalle["estado_firma"] = "FIRMADA"
             self.db.commit()

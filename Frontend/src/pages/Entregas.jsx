@@ -4,7 +4,7 @@ import toast from "react-hot-toast";
 import { searchEmployees } from "../services/staffService";
 import { getProductos, getStock } from "../services/eppService";
 import { getTallas } from "../services/catalogosService";
-import { getEntregas, crearEntregas, crearSustitucion, getVigentes, abrirActa } from "../services/entregasService";
+import { getEntregas, crearEntregas, crearSustitucion, getVigentes, abrirActa, abrirActaMaestra } from "../services/entregasService";
 import SustitucionModal from "../components/entregas/SustitucionModal";
 import ActaEntrega from "../components/entregas/ActaEntrega";
 import DataTable from "../components/common/DataTable";
@@ -282,7 +282,14 @@ const TabRegistrar = () => {
                 {trabajador.nombre_subarea ? ` · ${trabajador.nombre_subarea}` : ""}
               </p>
             </div>
-            <button className="catalogo-btn catalogo-btn--cancel" onClick={limpiarTrabajador}>Cambiar</button>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="catalogo-btn catalogo-btn--edit"
+                onClick={() => abrirActaMaestra(trabajador.rut)}
+                title="Todas las entregas firmadas de este trabajador en un solo documento">
+                Registro de EPP
+              </button>
+              <button className="catalogo-btn catalogo-btn--cancel" onClick={limpiarTrabajador}>Cambiar</button>
+            </div>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start" }}>
