@@ -244,11 +244,48 @@ a mano contra la base.
 
 ## Lo que queda pendiente para el stack completo
 
-Cuando esta rama se mergee a `main` y el workflow publique las imágenes:
+**Los tres primeros puntos requieren permiso de administrador sobre el
+repositorio** (`GabrielPavezSilva/app-prevencion`): un colaborador sin ese
+permiso no puede ni generar el token del runner ni crear variables o secretos.
 
-1. Definir `DEPLOY_DIR=/opt/prevencion` en Settings → Variables del repositorio.
-2. Definir el secreto `VITE_API_URL` con el valor `/api`.
-3. En el VPS: `git pull && docker compose up -d` — ahí se suman backend,
+1. **Registrar el runner de este proyecto en el VPS.** El job `deploy` corre en
+   `runs-on: [self-hosted, prevencion]` y hoy **no existe ningún runner**
+   registrado en este repositorio: los de `/home/admin/actions-runner-*`
+   pertenecen a otros repos y no toman estos jobs. Como el dueño es una cuenta
+   personal y no una organización, tampoco hay runners heredados. Sin runner el
+   job queda encolado ~24 h y falla por timeout.
+
+   ```bash
+   mkdir -p /home/admin/actions-runner-prevencion && cd $_
+   # Verificar la última versión en github.com/actions/runner/releases
+   curl -o actions-runner-linux-x64.tar.gz -L      https://github.com/actions/runner/releases/download/v2.331.0/actions-runner-linux-x64-2.331.0.tar.gz
+   tar xzf actions-runner-linux-x64.tar.gz
+   # El token sale de Settings -> Actions -> Runners -> New self-hosted runner
+   # y dura una hora.
+   ./config.sh --url https://github.com/GabrielPavezSilva/app-prevencion      --token <TOKEN> --name prevencion-vps --labels prevencion --unattended
+   sudo ./svc.sh install admin && sudo ./svc.sh start
+   ```
+
+   La label `prevencion` no es decorativa: con `self-hosted` a secas el job
+   podía caer en el runner de otro proyecto del mismo dueño y reiniciar el
+   stack equivocado.
+
+2. Definir `DEPLOY_DIR=/opt/prevencion` en Settings → Variables del repositorio.
+3. Definir el secreto `VITE_API_URL` con el valor `/api`.
+4. En el VPS: `git pull && docker compose up -d` — ahí se suman backend,
    frontend, nginx y ofelia.
-4. Configurar el `server` de nginx del host y el registro A, según
+5. Configurar el `server` de nginx del host y el registro A, según
    `docs/deploy-prcivot.md`.
+
+### Runner self-hosted en un repositorio público
+
+El repositorio es público, y un runner self-hosted en un repo público es el
+caso que GitHub desaconseja: un PR desde un fork podría ejecutar código ajeno
+en el VPS. Hoy no ocurre porque `deploy.yml` solo se dispara con `push` a
+`main` y `ci.yml` corre en `ubuntu-latest`. Para que siga así:
+
+- Ningún workflow con trigger `pull_request` debe usar `runs-on: self-hosted`.
+- Settings → Actions → General: mantener "Require approval for all external
+  contributors".
+- Si el repositorio no necesita ser público, pasarlo a privado elimina el
+  problema de raíz.
