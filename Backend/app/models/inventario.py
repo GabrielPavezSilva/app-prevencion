@@ -7,7 +7,7 @@ Fase 1: modelo de datos del dominio EPP. Reemplaza el dominio de lavandería
 """
 from sqlalchemy import (
     Column, Integer, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint,
-    LargeBinary
+    LargeBinary, text
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -214,7 +214,11 @@ class Recinto(Base):
 
     recinto_id = Column(Integer, primary_key=True, autoincrement=True)
     nombre_recinto = Column(String(60), nullable=False, unique=True)
-    activo = Column(Boolean, nullable=False, default=True)
+    # server_default y no `default=True`: este último es un default de Python que
+    # solo aplica el ORM, y todo el proyecto inserta con SQL crudo. Sin el default
+    # en la base, un INSERT que no nombre la columna viola el NOT NULL — y el
+    # esquema de create_all dejaría de coincidir con el de la migración.
+    activo = Column(Boolean, nullable=False, server_default=text("true"))
 
 
 class StockEpp(Base):
