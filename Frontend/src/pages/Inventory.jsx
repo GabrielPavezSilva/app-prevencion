@@ -138,6 +138,9 @@ const TabProductos = () => {
       cell: ({ row }) => (row.original.talla_aplica ? "Sí" : "No") },
     { accessorKey: "certificacion", header: "Certificación",
       cell: ({ row }) => row.original.certificacion || "—" },
+    { accessorKey: "vida_util_meses", header: "Vida útil", meta: { align: "center" },
+      cell: ({ row }) => row.original.vida_util_meses
+        ? `${row.original.vida_util_meses} meses` : "—" },
     { accessorKey: "activo", header: "Estado", meta: { align: "center" },
       cell: ({ row }) => row.original.activo
         ? <Badge texto="Activo" color="#16a34a" /> : <Badge texto="Inactivo" color="#94a3b8" /> },
