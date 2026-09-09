@@ -70,6 +70,25 @@ def _fmt_fecha(valor: Any) -> str:
     return "-"
 
 
+def _ajustar(pdf: FPDF, ancho: float, texto: str) -> str:
+    """
+    Recorta `texto` para que quepa en `ancho` mm con la fuente activa.
+
+    `pdf.cell` no recorta lo que no cabe: lo dibuja igual, encima de la celda
+    siguiente, y el encabezado queda ilegible. Un nombre completo o un cargo
+    largo alcanzan para eso.
+
+    Los "..." van con puntos sueltos a propósito: las fuentes core de fpdf2
+    codifican en latin-1 y el carácter de elipsis no existe ahí.
+    """
+    limite = ancho - 1  # deja aire para que el texto no bese el borde
+    if pdf.get_string_width(texto) <= limite:
+        return texto
+    while texto and pdf.get_string_width(texto + "...") > limite:
+        texto = texto[:-1]
+    return texto.rstrip() + "..."
+
+
 def _encabezado(pdf: FPDF, trabajador: Dict[str, Any], titulo: str, fecha: datetime) -> None:
     pdf.set_font("Helvetica", "B", 15)
     pdf.cell(0, 10, titulo, new_x="LMARGIN", new_y="NEXT")
@@ -77,14 +96,17 @@ def _encabezado(pdf: FPDF, trabajador: Dict[str, Any], titulo: str, fecha: datet
     pdf.set_font("Helvetica", "B", 11)
     pdf.cell(0, 8, "Antecedentes Generales", new_x="LMARGIN", new_y="NEXT")
 
+    # Anchos de las cuatro celdas de cada par; suman los 190 mm útiles del A4.
+    # El label izquierdo es el más ancho porque "Persona Trabajadora:" es la
+    # etiqueta más larga del bloque.
     def par(et_izq: str, val_izq: Any, et_der: str, val_der: Any) -> None:
         for ancho_et, ancho_val, etiqueta, valor in (
-            (38, 57, et_izq, val_izq), (20, 75, et_der, val_der),
+            (42, 53, et_izq, val_izq), (22, 73, et_der, val_der),
         ):
             pdf.set_font("Helvetica", "", 10)
-            pdf.cell(ancho_et, 6, f"{etiqueta}:")
+            pdf.cell(ancho_et, 6, _ajustar(pdf, ancho_et, f"{etiqueta}:"))
             pdf.set_font("Helvetica", "B", 10)
-            pdf.cell(ancho_val, 6, str(valor or "-"))
+            pdf.cell(ancho_val, 6, _ajustar(pdf, ancho_val, str(valor or "-")))
         pdf.ln(6)
 
     par("Persona Trabajadora", trabajador.get("nombre_completo"), "Rut", trabajador.get("rut"))
@@ -190,6 +212,20 @@ if __name__ == "__main__":
 
     assert _fecha_recambio(datetime(2026, 1, 1), None) == "-"
     assert _fecha_recambio(datetime(2026, 1, 1), 6) == "30-06-2026"
+
+    # El encabezado no se sobrepone: lo que no cabe en su celda se recorta.
+    medidor = FPDF(format="A4", unit="mm")
+    medidor.add_page()
+    medidor.set_font("Helvetica", "B", 10)
+    largo = "Bernardino Esteban de la Santisima Concepcion Valenzuela Iturriaga"
+    assert medidor.get_string_width(largo) > 53, "el caso de prueba ya cabia"
+    recortado = _ajustar(medidor, 53, largo)
+    assert recortado.endswith("...") and medidor.get_string_width(recortado) <= 52
+    # Lo que ya cabe se deja intacto, sin puntos de más.
+    assert _ajustar(medidor, 53, "Ana Perez") == "Ana Perez"
+    # Y la etiqueta más larga del bloque entra en su ancho sin recorte.
+    medidor.set_font("Helvetica", "", 10)
+    assert _ajustar(medidor, 42, "Persona Trabajadora:") == "Persona Trabajadora:"
 
     trab = {"empresa": "ACME", "nombre_completo": "Ana Pérez", "rut": "11.111.111-1",
             "cargo": "Operaria", "nombre_area": "Producción"}
