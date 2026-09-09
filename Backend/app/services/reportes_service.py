@@ -37,6 +37,7 @@ COLUMNAS_TRAZABILIDAD = [
     Columna("area", "Área", ancho=22),
     Columna("subarea", "Subárea", ancho=24),
     Columna("cargo", "Cargo", ancho=26),
+    Columna("recinto", "Recinto", ancho=16),
     Columna("categoria", "Categoría", ancho=20),
     Columna("producto", "Producto", ancho=28),
     Columna("talla", "Talla", ancho=10),
@@ -56,6 +57,7 @@ COLUMNAS_VIGENTES = [
     Columna("subarea", "Subárea", ancho=24),
     Columna("cargo", "Cargo", ancho=26),
     Columna("activo", "Activo", ancho=8),
+    Columna("recinto", "Recinto", ancho=16),
     Columna("categoria", "Categoría", ancho=20),
     Columna("producto", "Producto", ancho=28),
     Columna("talla", "Talla", ancho=10),
@@ -80,6 +82,7 @@ COLUMNAS_RESUMEN = [
 ]
 
 COLUMNAS_STOCK = [
+    Columna("recinto", "Recinto", ancho=16),
     Columna("categoria", "Categoría", ancho=20),
     Columna("producto", "Producto", ancho=30),
     Columna("talla", "Talla", ancho=10),
@@ -124,12 +127,14 @@ class ReportesService:
     # ── R3 · Stock y quiebres ────────────────────────────────────────────────
 
     def stock(self, categoria_id: Optional[int] = None, solo_alertas: bool = False,
-              dias_consumo: int = 90) -> List[Dict[str, Any]]:
-        return self.repo.stock_quiebres(categoria_id, solo_alertas, dias_consumo)
+              dias_consumo: int = 90,
+              recinto_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        return self.repo.stock_quiebres(categoria_id, solo_alertas, dias_consumo, recinto_id)
 
     def stock_excel(self, categoria_id: Optional[int] = None, solo_alertas: bool = False,
-                    dias_consumo: int = 90) -> io.BytesIO:
-        filas = self.stock(categoria_id, solo_alertas, dias_consumo)
+                    dias_consumo: int = 90,
+                    recinto_id: Optional[int] = None) -> io.BytesIO:
+        filas = self.stock(categoria_id, solo_alertas, dias_consumo, recinto_id)
         return (ExcelBuilder()
                 .add_sheet("Stock", filas, COLUMNAS_STOCK)
                 .build())

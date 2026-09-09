@@ -35,6 +35,7 @@ _JOINS_ENTREGA = """
     LEFT JOIN productos_epp   p   ON p.producto_id    = e.producto_id
     LEFT JOIN categorias_epp  cat ON cat.categoria_id = p.categoria_id
     LEFT JOIN tallas          t   ON t.talla_id       = e.talla_id
+    LEFT JOIN recintos        rec ON rec.recinto_id   = e.recinto_id
 """
 
 
@@ -69,6 +70,11 @@ def _filtros_entregas(f: Dict[str, Any], params: Dict[str, Any]) -> str:
     if f.get("producto_id") is not None:
         sql += " AND e.producto_id = :producto_id"
         params["producto_id"] = f["producto_id"]
+    # El recinto sale de la entrega, no del usuario: es de qué bodega salió el
+    # EPP, y eso no cambia si después trasladan a la persona.
+    if f.get("recinto_id") is not None:
+        sql += " AND e.recinto_id = :recinto_id"
+        params["recinto_id"] = f["recinto_id"]
     if f.get("categoria_id") is not None:
         sql += " AND p.categoria_id = :categoria_id"
         params["categoria_id"] = f["categoria_id"]
@@ -104,6 +110,7 @@ class ReportesRepository:
                 a.nombre_area          AS area,
                 sa.nombre_subarea      AS subarea,
                 per.cargo,
+                rec.nombre_recinto     AS recinto,
                 cat.nombre_categoria   AS categoria,
                 p.nombre               AS producto,
                 t.nombre_talla         AS talla,
@@ -192,6 +199,7 @@ class ReportesRepository:
                 sa.nombre_subarea     AS subarea,
                 per.cargo,
                 COALESCE(per.activo, TRUE) AS activo,
+                rec.nombre_recinto    AS recinto,
                 cat.nombre_categoria  AS categoria,
                 p.nombre              AS producto,
                 t.nombre_talla        AS talla,
@@ -209,6 +217,7 @@ class ReportesRepository:
             LEFT JOIN productos_epp  p   ON p.producto_id    = e.producto_id
             LEFT JOIN categorias_epp cat ON cat.categoria_id = p.categoria_id
             LEFT JOIN tallas         t   ON t.talla_id       = e.talla_id
+            LEFT JOIN recintos       rec ON rec.recinto_id   = e.recinto_id
             LEFT JOIN empresa        emp ON emp.empresa_id   = per.empresa_id
             LEFT JOIN areas          a   ON a.area_id        = per.area_id
             LEFT JOIN subareas       sa  ON sa.subarea_id    = per.subarea_id
@@ -248,24 +257,30 @@ class ReportesRepository:
 
     def stock_quiebres(self, categoria_id: Optional[int] = None,
                        solo_alertas: bool = False,
-                       dias_consumo: int = 90) -> List[Dict[str, Any]]:
+                       dias_consumo: int = 90,
+                       recinto_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Snapshot de stock con consumo de la ventana y cobertura estimada.
 
         `consumo` sale de movimientos_stock tipo ENTREGA (cantidades negativas,
         por eso el SUM(-cantidad)). BAJA_DANO se excluye a propósito: no descuenta
         del bodegón, documenta la baja de una unidad que ya estaba en terreno.
+
+        El CTE agrupa por recinto además de producto+talla: sin eso el consumo
+        de una bodega se le imputaría a las tres y la cobertura estimada de cada
+        una saldría mal.
         """
         params: Dict[str, Any] = {"dias": dias_consumo}
         sql = """
             WITH consumo AS (
-                SELECT producto_id, talla_id, SUM(-cantidad) AS consumido
+                SELECT producto_id, talla_id, recinto_id, SUM(-cantidad) AS consumido
                 FROM movimientos_stock
                 WHERE tipo = 'ENTREGA'
                   AND fecha >= now() - make_interval(days => :dias)
-                GROUP BY producto_id, talla_id
+                GROUP BY producto_id, talla_id, recinto_id
             )
             SELECT
+                r.nombre_recinto     AS recinto,
                 cat.nombre_categoria AS categoria,
                 p.nombre             AS producto,
                 t.nombre_talla       AS talla,
@@ -283,13 +298,18 @@ class ReportesRepository:
                 END AS cobertura_dias
             FROM stock_epp s
             JOIN productos_epp p ON p.producto_id = s.producto_id
+            JOIN recintos r ON r.recinto_id = s.recinto_id
             LEFT JOIN categorias_epp cat ON cat.categoria_id = p.categoria_id
             LEFT JOIN tallas t ON t.talla_id = s.talla_id
             LEFT JOIN consumo c
                    ON c.producto_id = s.producto_id
                   AND c.talla_id IS NOT DISTINCT FROM s.talla_id
+                  AND c.recinto_id = s.recinto_id
             WHERE 1=1
         """
+        if recinto_id is not None:
+            sql += " AND s.recinto_id = :recinto_id"
+            params["recinto_id"] = recinto_id
         if categoria_id is not None:
             sql += " AND p.categoria_id = :categoria_id"
             params["categoria_id"] = categoria_id
@@ -300,7 +320,7 @@ class ReportesRepository:
                 CASE WHEN s.cantidad_actual <= 0 THEN 0
                      WHEN s.cantidad_actual <= s.stock_minimo THEN 1
                      ELSE 2 END,
-                p.nombre, t.nombre_talla
+                r.nombre_recinto, p.nombre, t.nombre_talla
         """
         return self._rows(sql, params)
 

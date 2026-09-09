@@ -50,6 +50,19 @@ class ImportacionesRepository:
              "talla_aplica": talla_aplica, "certificacion": certificacion},
         ).scalar()
 
+    def get_recinto_id(self, nombre: str) -> Optional[int]:
+        row = self.db.execute(
+            text("SELECT recinto_id FROM recintos WHERE LOWER(nombre_recinto) = LOWER(:n) AND activo = TRUE"),
+            {"n": nombre},
+        ).fetchone()
+        return row[0] if row else None
+
+    def get_nombres_recintos(self) -> List[str]:
+        """Para que el error de fila diga cuáles son los válidos."""
+        return [r[0] for r in self.db.execute(
+            text("SELECT nombre_recinto FROM recintos WHERE activo = TRUE ORDER BY nombre_recinto")
+        ).fetchall()]
+
     def get_talla_id(self, nombre: str) -> Optional[int]:
         row = self.db.execute(
             text("SELECT talla_id FROM tallas WHERE LOWER(nombre_talla) = LOWER(:n)"),
@@ -68,13 +81,14 @@ class ImportacionesRepository:
 
     def ingresar_stock(self, producto_id: int, talla_id: Optional[int], cantidad: int,
                        stock_minimo: Optional[int], usuario_id: Optional[int],
-                       observacion: Optional[str]) -> None:
+                       observacion: Optional[str], recinto_id: int) -> None:
         stock = self.db.execute(
             text("""
                 SELECT stock_id, cantidad_actual FROM stock_epp
                 WHERE producto_id = :p AND talla_id IS NOT DISTINCT FROM :t
+                  AND recinto_id = :r
             """),
-            {"p": producto_id, "t": talla_id},
+            {"p": producto_id, "t": talla_id, "r": recinto_id},
         ).mappings().fetchone()
 
         if stock:
@@ -90,37 +104,47 @@ class ImportacionesRepository:
         else:
             self.db.execute(
                 text("""
-                    INSERT INTO stock_epp (producto_id, talla_id, cantidad_actual, stock_minimo)
-                    VALUES (:p, :t, :cant, COALESCE(:sm, 0))
+                    INSERT INTO stock_epp
+                        (producto_id, talla_id, recinto_id, cantidad_actual, stock_minimo)
+                    VALUES (:p, :t, :r, :cant, COALESCE(:sm, 0))
                 """),
-                {"p": producto_id, "t": talla_id, "cant": cantidad, "sm": stock_minimo},
+                {"p": producto_id, "t": talla_id, "r": recinto_id,
+                 "cant": cantidad, "sm": stock_minimo},
             )
 
         self.db.execute(
             text("""
                 INSERT INTO movimientos_stock
-                    (producto_id, talla_id, tipo, cantidad, usuario_id, observacion)
-                VALUES (:p, :t, 'INGRESO_IMPORT', :cant, :u, :obs)
+                    (producto_id, talla_id, recinto_id, tipo, cantidad, usuario_id, observacion)
+                VALUES (:p, :t, :r, 'INGRESO_IMPORT', :cant, :u, :obs)
             """),
-            {"p": producto_id, "t": talla_id, "cant": cantidad, "u": usuario_id, "obs": observacion},
+            {"p": producto_id, "t": talla_id, "r": recinto_id, "cant": cantidad,
+             "u": usuario_id, "obs": observacion},
         )
 
     def insertar_entrega_historica(self, trabajador: Dict[str, Any], producto_id: int,
                                    talla_id: Optional[int], cantidad: int, motivo: str,
-                                   fecha: datetime, usuario_id: Optional[int]) -> None:
+                                   fecha: datetime, usuario_id: Optional[int],
+                                   recinto_id: int) -> None:
+        """
+        Registro de migración: no afecta el stock actual, pero igual lleva
+        recinto — la columna es NOT NULL y una entrega sin bodega de origen no
+        se puede reportar.
+        """
         self.db.execute(
             text("""
                 INSERT INTO entregas_epp
-                    (rut, nombre_completo, empresa_id, producto_id, talla_id, cantidad,
-                     motivo, estado_firma, usuario_entrega, fecha_entrega)
+                    (rut, nombre_completo, empresa_id, producto_id, talla_id, recinto_id,
+                     cantidad, motivo, estado_firma, usuario_entrega, fecha_entrega)
                 VALUES
-                    (:rut, :nombre, :empresa_id, :producto_id, :talla_id, :cantidad,
-                     :motivo, 'PENDIENTE', :usuario_id, :fecha)
+                    (:rut, :nombre, :empresa_id, :producto_id, :talla_id, :recinto_id,
+                     :cantidad, :motivo, 'PENDIENTE', :usuario_id, :fecha)
             """),
             {
                 "rut": trabajador["rut"], "nombre": trabajador["nombre_completo"],
                 "empresa_id": trabajador.get("empresa_id"), "producto_id": producto_id,
-                "talla_id": talla_id, "cantidad": cantidad, "motivo": motivo,
+                "talla_id": talla_id, "recinto_id": recinto_id,
+                "cantidad": cantidad, "motivo": motivo,
                 "usuario_id": usuario_id, "fecha": fecha,
             },
         )

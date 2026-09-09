@@ -52,12 +52,14 @@ def filtros_entregas(
     subarea_id: Optional[int] = None,
     producto_id: Optional[int] = None,
     categoria_id: Optional[int] = None,
+    recinto_id: Optional[int] = None,
     rut: Optional[str] = None,
 ) -> dict:
     return {
         "desde": desde, "hasta": hasta, "motivo": motivo,
         "empresa_id": empresa_id, "area_id": area_id, "subarea_id": subarea_id,
-        "producto_id": producto_id, "categoria_id": categoria_id, "rut": rut,
+        "producto_id": producto_id, "categoria_id": categoria_id,
+        "recinto_id": recinto_id, "rut": rut,
     }
 
 
@@ -67,12 +69,14 @@ def filtros_vigentes(
     subarea_id: Optional[int] = None,
     producto_id: Optional[int] = None,
     categoria_id: Optional[int] = None,
+    recinto_id: Optional[int] = None,
     rut: Optional[str] = None,
     incluir_inactivos: bool = Query(False, description="Incluye desvinculados con EPP sin devolver"),
 ) -> dict:
     return {
         "empresa_id": empresa_id, "area_id": area_id, "subarea_id": subarea_id,
-        "producto_id": producto_id, "categoria_id": categoria_id, "rut": rut,
+        "producto_id": producto_id, "categoria_id": categoria_id,
+        "recinto_id": recinto_id, "rut": rut,
         "incluir_inactivos": incluir_inactivos,
     }
 
@@ -123,19 +127,21 @@ def reporte_epp_vigentes_excel(filtros: dict = Depends(filtros_vigentes),
 def reporte_stock(categoria_id: Optional[int] = None,
                   solo_alertas: bool = Query(False, description="Solo lo que está en o bajo el mínimo"),
                   dias_consumo: int = Query(90, ge=1, le=365),
+                  recinto_id: Optional[int] = Query(None, description="Filtra por recinto"),
                   db: Session = Depends(get_mysql_db),
                   _: dict = Depends(require_module("reportes"))):
     """Snapshot de stock con consumo de la ventana y cobertura estimada en días."""
-    return ReportesService(db).stock(categoria_id, solo_alertas, dias_consumo)
+    return ReportesService(db).stock(categoria_id, solo_alertas, dias_consumo, recinto_id)
 
 
 @router.get("/stock.xlsx")
 def reporte_stock_excel(categoria_id: Optional[int] = None,
                         solo_alertas: bool = False,
                         dias_consumo: int = Query(90, ge=1, le=365),
+                        recinto_id: Optional[int] = Query(None, description="Filtra por recinto"),
                         db: Session = Depends(get_mysql_db),
                         _: dict = Depends(require_module("reportes"))):
     return _descarga(
-        ReportesService(db).stock_excel(categoria_id, solo_alertas, dias_consumo),
+        ReportesService(db).stock_excel(categoria_id, solo_alertas, dias_consumo, recinto_id),
         "stock_epp",
     )

@@ -24,7 +24,8 @@ def importar(template_id: str, file: UploadFile = File(...),
     try:
         contenido = file.file.read()
         return ImportacionesService(db).procesar(
-            template_id, contenido, file.filename, current_user.get("userId")
+            template_id, contenido, file.filename, current_user.get("userId"),
+            current_user=current_user
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

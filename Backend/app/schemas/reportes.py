@@ -20,6 +20,7 @@ class TrazabilidadRow(BaseModel):
     area: Optional[str] = None
     subarea: Optional[str] = None
     cargo: Optional[str] = None
+    recinto: Optional[str] = None
     categoria: Optional[str] = None
     producto: Optional[str] = None
     talla: Optional[str] = None
@@ -39,6 +40,7 @@ class EppVigenteRow(BaseModel):
     subarea: Optional[str] = None
     cargo: Optional[str] = None
     activo: bool = True
+    recinto: Optional[str] = None
     categoria: Optional[str] = None
     producto: Optional[str] = None
     talla: Optional[str] = None
@@ -50,6 +52,7 @@ class EppVigenteRow(BaseModel):
 
 
 class StockRow(BaseModel):
+    recinto: Optional[str] = None
     categoria: Optional[str] = None
     producto: str
     talla: Optional[str] = None
