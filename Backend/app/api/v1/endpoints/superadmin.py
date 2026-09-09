@@ -6,6 +6,7 @@ from app.services.superadmin_service import SuperAdminService
 from app.schemas.superadmin import (
     UsuarioCreate, UsuarioUpdate, UsuarioPasswordReset, UsuarioCambiarPassword,
     UsuarioResponse, RolCreate, RolUpdate, RolResponse, ModuloResponse, RolModulosUpdate,
+    RecintoResponse,
 )
 
 router = APIRouter()
@@ -119,6 +120,17 @@ def asignar_modulos_a_rol(
     _: dict = Depends(_require_superadmin),
 ):
     return SuperAdminService(db).set_rol_modulos(rol_id, data)
+
+
+# ── Recintos ──────────────────────────────────────────────────────────────────
+
+@router.get("/recintos", response_model=list[RecintoResponse])
+def listar_recintos(
+    db: Session = Depends(get_mysql_db),
+    _: dict = Depends(_require_superadmin),
+):
+    """Catálogo para el selector de recinto al crear o editar un usuario."""
+    return SuperAdminService(db).get_recintos()
 
 
 # ── Módulos ────────────────────────────────────────────────────────────────────

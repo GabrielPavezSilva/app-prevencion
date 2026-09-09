@@ -18,6 +18,21 @@ class SuperAdminService:
 
     # ── Usuarios ──────────────────────────────────────────────────────────────
 
+    def _validar_recinto(self, recinto_id) -> None:
+        """
+        Un recinto inexistente entraría igual por la FK con un 500 feo; acá se
+        traduce a un 400 que dice qué pasó.
+        """
+        if recinto_id is None:
+            return
+        validos = {r["recinto_id"] for r in self.repo.get_recintos()}
+        if recinto_id not in validos:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                f"El recinto {recinto_id} no existe o está inactivo")
+
+    def get_recintos(self) -> list[dict]:
+        return self.repo.get_recintos()
+
     def get_usuarios(self) -> list[UsuarioResponse]:
         rows = self.repo.get_all_usuarios()
         return [UsuarioResponse(**r) for r in rows]
@@ -28,9 +43,11 @@ class SuperAdminService:
         if self.repo.correo_exists(data.correo):
             raise HTTPException(status.HTTP_409_CONFLICT, "El correo ya está en uso")
 
+        self._validar_recinto(data.recinto_id)
         hashed = pwd_context.hash(data.contrasena)
         user_id = self.repo.create_usuario(
-            data.username, data.correo, hashed, data.rol_id, data.activo
+            data.username, data.correo, hashed, data.rol_id, data.activo,
+            data.recinto_id
         )
         row = self.repo.get_usuario_by_id(user_id)
         return UsuarioResponse(**row)
@@ -45,7 +62,15 @@ class SuperAdminService:
         if data.correo and self.repo.correo_exists(data.correo, exclude_id=user_id):
             raise HTTPException(status.HTTP_409_CONFLICT, "El correo ya está en uso")
 
-        self.repo.update_usuario(user_id, data.username, data.correo, data.rol_id, data.activo)
+        # `limpiar_recinto` gana sobre `recinto_id`: es la forma explícita de
+        # dejar a un usuario sin recinto (al promoverlo a un rol de acceso total).
+        tocar = data.limpiar_recinto or data.recinto_id is not None
+        nuevo_recinto = None if data.limpiar_recinto else data.recinto_id
+        if tocar:
+            self._validar_recinto(nuevo_recinto)
+
+        self.repo.update_usuario(user_id, data.username, data.correo, data.rol_id,
+                                 data.activo, nuevo_recinto, tocar)
         row = self.repo.get_usuario_by_id(user_id)
         return UsuarioResponse(**row)
 

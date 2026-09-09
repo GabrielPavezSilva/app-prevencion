@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   getCategorias, createCategoria, updateCategoria, deleteCategoria,
   getProductos, createProducto, updateProducto, deleteProducto,
-  getStock, ajustarStock,
+  getStock, ajustarStock, getRecintos,
 } from "../services/eppService";
 import { getTallas, createTalla, updateTalla, deleteTalla } from "../services/catalogosService";
 import CatalogoTable from "../components/inventory/CatalogoTable";
@@ -11,6 +11,7 @@ import ConfirmDeleteModal from "../components/inventory/ConfirmDeleteModal";
 import ProductoModal from "../components/inventory/ProductoModal";
 import AjusteStockModal from "../components/inventory/AjusteStockModal";
 import DataTable from "../components/common/DataTable";
+import { useAuth } from "../context/AuthContextModel";
 import "./Page.css";
 import "./Inventory.css";
 
@@ -183,9 +184,17 @@ const TabProductos = () => {
 
 // ── Tab: Stock ────────────────────────────────────────────────────────────────
 const TabStock = () => {
+  const { user } = useAuth();
+  // Sin recinto propio (admin) hay que elegirlo en cada movimiento; con recinto
+  // propio el backend lo impone. Es la misma señal que usa `resolver_recinto`,
+  // así no hay dos listas de roles que se desincronicen.
+  const puedeElegirRecinto = user?.recinto_id == null;
+
   const [stock, setStock] = useState([]);
   const [productos, setProductos] = useState([]);
   const [tallas, setTallas] = useState([]);
+  const [recintos, setRecintos] = useState([]);
+  const [filtroRecinto, setFiltroRecinto] = useState("");
   const [loading, setLoading] = useState(true);
   const [soloBajoMinimo, setSoloBajoMinimo] = useState(false);
   const [modal, setModal] = useState(false);
@@ -196,12 +205,16 @@ const TabStock = () => {
   const cargar = useCallback(async () => {
     setLoading(true);
     try {
-      const [st, prod, tll] = await Promise.all([
-        getStock(soloBajoMinimo ? { bajo_minimo: true } : {}), getProductos(), getTallas(),
+      const [st, prod, tll, rec] = await Promise.all([
+        getStock({
+          ...(soloBajoMinimo ? { bajo_minimo: true } : {}),
+          ...(filtroRecinto ? { recinto_id: filtroRecinto } : {}),
+        }),
+        getProductos(), getTallas(), getRecintos(),
       ]);
-      setStock(st); setProductos(prod); setTallas(tll);
+      setStock(st); setProductos(prod); setTallas(tll); setRecintos(rec);
     } catch { setStock([]); } finally { setLoading(false); }
-  }, [soloBajoMinimo]);
+  }, [soloBajoMinimo, filtroRecinto]);
   useEffect(() => { cargar(); }, [cargar]);
 
   const handleGuardar = async (data) => {
@@ -212,6 +225,7 @@ const TabStock = () => {
   };
 
   const columns = [
+    { accessorKey: "nombre_recinto", header: "Recinto" },
     { accessorKey: "nombre_producto", header: "Producto" },
     { accessorKey: "nombre_categoria", header: "Categoría",
       cell: ({ row }) => row.original.nombre_categoria || "—" },
@@ -234,6 +248,13 @@ const TabStock = () => {
       <div className="catalogo-tab-header">
         <h3 className="catalogo-tab-title">Stock</h3>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <select className="modal-input" style={{ width: "auto", fontSize: 13 }}
+            value={filtroRecinto} onChange={(e) => setFiltroRecinto(e.target.value)}>
+            <option value="">Todos los recintos</option>
+            {recintos.map((r) => (
+              <option key={r.recinto_id} value={r.recinto_id}>{r.nombre_recinto}</option>
+            ))}
+          </select>
           <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer", color: "var(--color-text-secondary)" }}>
             <input type="checkbox" checked={soloBajoMinimo} onChange={(e) => setSoloBajoMinimo(e.target.checked)} />
             Solo bajo mínimo
@@ -245,10 +266,12 @@ const TabStock = () => {
         </div>
       </div>
       <DataTable columns={columns} data={stock} loading={loading}
-        initialSort={[{ id: "nombre_producto", desc: false }]}
+        initialSort={[{ id: "nombre_recinto", desc: false }]}
         emptyState={<div className="xls xls--state">Sin stock registrado. Usa "Cargar / ajustar" o el importador.</div>} />
       {modal && (
         <AjusteStockModal stockRow={ajustando} productos={productos} tallas={tallas}
+          recintos={recintos} recintoPropio={user?.recinto_id ?? null}
+          puedeElegirRecinto={puedeElegirRecinto}
           onGuardar={handleGuardar}
           onCerrar={() => { if (!guardando) { setModal(false); setAjustando(null); } }}
           guardando={guardando} errorServidor={errorModal} />

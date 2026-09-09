@@ -12,9 +12,11 @@ class SuperAdminRepository:
     def get_all_usuarios(self) -> list[dict]:
         result = self.db.execute(text("""
             SELECT u.user_id, u.username, u.correo, u.rol_id,
-                   r.nombre_rol, COALESCE(u.activo, true) AS activo, u.creado_en
+                   r.nombre_rol, COALESCE(u.activo, true) AS activo, u.creado_en,
+                   u.recinto_id, rec.nombre_recinto
             FROM usuarios u
             JOIN roles r ON u.rol_id = r.rol_id
+            LEFT JOIN recintos rec ON rec.recinto_id = u.recinto_id
             ORDER BY u.user_id
         """))
         return [dict(row) for row in result.mappings().fetchall()]
@@ -22,9 +24,11 @@ class SuperAdminRepository:
     def get_usuario_by_id(self, user_id: int) -> Optional[dict]:
         result = self.db.execute(text("""
             SELECT u.user_id, u.username, u.correo, u.contrasena,
-                   u.rol_id, r.nombre_rol, COALESCE(u.activo, true) AS activo, u.creado_en
+                   u.rol_id, r.nombre_rol, COALESCE(u.activo, true) AS activo, u.creado_en,
+                   u.recinto_id, rec.nombre_recinto
             FROM usuarios u
             JOIN roles r ON u.rol_id = r.rol_id
+            LEFT JOIN recintos rec ON rec.recinto_id = u.recinto_id
             WHERE u.user_id = :user_id
         """), {"user_id": user_id})
         row = result.mappings().fetchone()
@@ -60,10 +64,11 @@ class SuperAdminRepository:
         return result.fetchone() is not None
 
     def create_usuario(self, username: str, correo: str, hashed_password: str,
-                       rol_id: int, activo: bool) -> int:
+                       rol_id: int, activo: bool,
+                       recinto_id: Optional[int] = None) -> int:
         result = self.db.execute(text("""
-            INSERT INTO usuarios (username, correo, contrasena, rol_id, activo)
-            VALUES (:username, :correo, :contrasena, :rol_id, :activo)
+            INSERT INTO usuarios (username, correo, contrasena, rol_id, activo, recinto_id)
+            VALUES (:username, :correo, :contrasena, :rol_id, :activo, :recinto_id)
             RETURNING user_id
         """), {
             "username": username,
@@ -71,14 +76,25 @@ class SuperAdminRepository:
             "contrasena": hashed_password,
             "rol_id": rol_id,
             "activo": activo,
+            "recinto_id": recinto_id,
         })
         self.db.commit()
         return result.scalar()
 
     def update_usuario(self, user_id: int, username: Optional[str], correo: Optional[str],
-                       rol_id: Optional[int], activo: Optional[bool]) -> bool:
+                       rol_id: Optional[int], activo: Optional[bool],
+                       recinto_id: Optional[int] = None,
+                       tocar_recinto: bool = False) -> bool:
+        """
+        Actualización parcial. `tocar_recinto` existe porque en este patrón
+        `None` significa "no informado", y acá hace falta poder poner el recinto
+        en NULL — es lo que se hace al promover a un rol de acceso total.
+        """
         parts = []
         params: dict = {"user_id": user_id}
+        if tocar_recinto:
+            parts.append("recinto_id = :recinto_id")
+            params["recinto_id"] = recinto_id
         if username is not None:
             parts.append("username = :username")
             params["username"] = username
@@ -104,6 +120,13 @@ class SuperAdminRepository:
             UPDATE usuarios SET contrasena = :pwd WHERE user_id = :user_id
         """), {"pwd": hashed_password, "user_id": user_id})
         self.db.commit()
+
+    def get_recintos(self) -> list[dict]:
+        result = self.db.execute(text("""
+            SELECT recinto_id, nombre_recinto FROM recintos
+            WHERE activo = TRUE ORDER BY nombre_recinto
+        """))
+        return [dict(row) for row in result.mappings().fetchall()]
 
     # ── Roles ─────────────────────────────────────────────────────────────────
 

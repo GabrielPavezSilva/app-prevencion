@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import toast from 'react-hot-toast';
 import {
     getUsuarios, createUsuario, updateUsuario, resetPassword,
-    getRoles, createRol, updateRol, deleteRol, getModulos,
+    getRoles, createRol, updateRol, deleteRol, getModulos, getRecintosSuperadmin,
 } from '../services/superadminService';
 import db from '../db/localDb';
 import { reintentarErrores, limpiarSincronizados, procesarCola } from '../sync/syncManager';
@@ -177,7 +177,8 @@ const SuperAdmin = () => {
     const [showUserModal, setShowUserModal] = useState(false);
     const [showPwdModal, setShowPwdModal] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
-    const [userForm, setUserForm] = useState({ username: '', correo: '', contrasena: '', rol_id: '', activo: true });
+    const [userForm, setUserForm] = useState({ username: '', correo: '', contrasena: '', rol_id: '', activo: true, recinto_id: '' });
+    const [recintos, setRecintos] = useState([]);
     const [pwdForm, setPwdForm] = useState({ nueva_contrasena: '', confirmar: '' });
     const [targetUserId, setTargetUserId] = useState(null);
 
@@ -194,7 +195,10 @@ const SuperAdmin = () => {
     const loadAll = useCallback(async () => {
         setLoading(true);
         try {
-            const [u, r, m] = await Promise.all([getUsuarios(), getRoles(), getModulos()]);
+            const [u, r, m, rec] = await Promise.all([
+                getUsuarios(), getRoles(), getModulos(), getRecintosSuperadmin(),
+            ]);
+            setRecintos(rec);
             setUsuarios(Array.isArray(u) ? u : []);
             setRoles(Array.isArray(r) ? r : []);
             setModulos(Array.isArray(m) ? m : []);
@@ -211,13 +215,13 @@ const SuperAdmin = () => {
 
     const openCreateUser = () => {
         setEditingUser(null);
-        setUserForm({ username: '', correo: '', contrasena: '', rol_id: roles[0]?.rol_id ?? '', activo: true });
+        setUserForm({ username: '', correo: '', contrasena: '', rol_id: roles[0]?.rol_id ?? '', activo: true, recinto_id: '' });
         setShowUserModal(true);
     };
 
     const openEditUser = (u) => {
         setEditingUser(u);
-        setUserForm({ correo: u.correo, rol_id: u.rol_id, activo: u.activo });
+        setUserForm({ correo: u.correo, rol_id: u.rol_id, activo: u.activo, recinto_id: u.recinto_id ?? '' });
         setShowUserModal(true);
     };
 
@@ -236,6 +240,8 @@ const SuperAdmin = () => {
                     correo: userForm.correo,
                     rol_id: Number(userForm.rol_id),
                     activo: userForm.activo,
+                    recinto_id: userForm.recinto_id === '' ? null : Number(userForm.recinto_id),
+                    limpiar_recinto: userForm.recinto_id === '',
                 });
                 toast.success('Usuario actualizado');
             } else {
@@ -246,6 +252,7 @@ const SuperAdmin = () => {
                     contrasena: userForm.contrasena,
                     rol_id: Number(userForm.rol_id),
                     activo: userForm.activo,
+                    recinto_id: userForm.recinto_id === '' ? null : Number(userForm.recinto_id),
                 });
                 toast.success('Usuario creado');
             }
@@ -510,7 +517,7 @@ const SuperAdmin = () => {
                                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                     <thead>
                                         <tr>
-                                            {['Usuario', 'Correo', 'Rol', 'Estado', 'Acciones'].map((h) => (
+                                            {['Usuario', 'Correo', 'Rol', 'Recinto', 'Estado', 'Acciones'].map((h) => (
                                                 <th key={h} style={thStyle}>{h}</th>
                                             ))}
                                         </tr>
@@ -549,6 +556,9 @@ const SuperAdmin = () => {
                                                     }}>
                                                         {u.nombre_rol}
                                                     </span>
+                                                </td>
+                                                <td style={{ ...tdStyle, color: 'var(--color-text-secondary)' }}>
+                                                    {u.nombre_recinto ?? '—'}
                                                 </td>
                                                 <td style={tdStyle}>
                                                     <span style={{
@@ -826,6 +836,23 @@ const SuperAdmin = () => {
                                     <option key={r.rol_id} value={r.rol_id}>{r.nombre_rol}</option>
                                 ))}
                             </select>
+                        </div>
+                        <div>
+                            <label style={labelStyle}>Recinto</label>
+                            <select
+                                style={{ ...inputStyle, appearance: 'none' }}
+                                value={userForm.recinto_id}
+                                onChange={(e) => setUserForm((p) => ({ ...p, recinto_id: e.target.value }))}
+                            >
+                                <option value="">Sin recinto (acceso total)</option>
+                                {recintos.map((r) => (
+                                    <option key={r.recinto_id} value={r.recinto_id}>{r.nombre_recinto}</option>
+                                ))}
+                            </select>
+                            <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginTop: 4 }}>
+                                Define de qué bodega mueve stock. Un usuario sin recinto y sin rol
+                                de acceso total no puede registrar entregas ni ajustar stock.
+                            </p>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                             <input

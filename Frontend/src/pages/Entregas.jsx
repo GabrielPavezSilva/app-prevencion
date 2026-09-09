@@ -2,12 +2,13 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import { searchEmployees } from "../services/staffService";
-import { getProductos, getStock } from "../services/eppService";
+import { getProductos, getStock, getRecintos } from "../services/eppService";
 import { getTallas } from "../services/catalogosService";
 import { getEntregas, crearEntregas, crearSustitucion, getVigentes, abrirActa, abrirActaMaestra } from "../services/entregasService";
 import SustitucionModal from "../components/entregas/SustitucionModal";
 import ActaEntrega from "../components/entregas/ActaEntrega";
 import DataTable from "../components/common/DataTable";
+import { useAuth } from "../context/AuthContextModel";
 import "./Page.css";
 import "./Inventory.css";
 
@@ -32,6 +33,7 @@ const sufijoStock = (cant) => (cant > 0 ? ` · ${cant} en stock` : " · sin stoc
 
 // ── Tab: Registrar entrega ────────────────────────────────────────────────────
 const TabRegistrar = () => {
+  const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [resultados, setResultados] = useState([]);
   const [buscando, setBuscando] = useState(false);
@@ -40,6 +42,12 @@ const TabRegistrar = () => {
   const [productos, setProductos] = useState([]);
   const [tallas, setTallas] = useState([]);
   const [stock, setStock] = useState([]);
+  const [recintos, setRecintos] = useState([]);
+  // Recinto del que sale todo el carrito. Quien tiene recinto propio no lo
+  // elige: el backend lo impone igual y un selector editable solo daría un 403
+  // más tarde. Los roles sin recinto (admin) tienen que elegirlo.
+  const [recintoId, setRecintoId] = useState(user?.recinto_id ?? "");
+  const puedeElegirRecinto = user?.recinto_id == null;
 
   const [carrito, setCarrito] = useState([]);
   const [addProd, setAddProd] = useState("");
@@ -62,16 +70,20 @@ const TabRegistrar = () => {
   const [susPendiente, setSusPendiente] = useState(null);   // datos esperando firma
 
   const cargarStock = useCallback(async () => {
-    try { setStock(await getStock()); }
+    // Sin recinto elegido no se consulta: el total de los tres recintos
+    // prometería unidades que están en otra bodega.
+    if (!recintoId) return setStock([]);
+    try { setStock(await getStock({ recinto_id: recintoId })); }
     catch { setStock([]); }
-  }, []);
+  }, [recintoId]);
 
   useEffect(() => {
-    Promise.all([getProductos({ activo: true }), getTallas()])
-      .then(([p, t]) => { setProductos(p); setTallas(t); })
+    Promise.all([getProductos({ activo: true }), getTallas(), getRecintos()])
+      .then(([p, t, r]) => { setProductos(p); setTallas(t); setRecintos(r); })
       .catch(() => {});
-    cargarStock();
-  }, [cargarStock]);
+  }, []);
+
+  useEffect(() => { cargarStock(); }, [cargarStock]);
 
   // Stock por producto+talla, y el total por producto para el selector de producto.
   const stockPorTalla = useMemo(
@@ -167,6 +179,7 @@ const TabRegistrar = () => {
       const creadas = await crearEntregas({
         rut: trabajador.rut,
         firma,
+        recinto_id: Number(recintoId),
         lineas: carrito.map((l) => ({
           producto_id: l.producto_id, talla_id: l.talla_id,
           cantidad: l.cantidad, motivo: l.motivo,
@@ -205,6 +218,7 @@ const TabRegistrar = () => {
         rut: trabajador.rut,
         entrega_reemplazada_id: sustituyendo.entrega_id,
         firma,
+        recinto_id: Number(recintoId),
         ...susPendiente,
       });
       toast.success((t) => (
@@ -296,6 +310,32 @@ const TabRegistrar = () => {
             {/* Nueva entrega */}
             <div>
               <h3 className="catalogo-tab-title" style={{ marginBottom: 12 }}>Nueva entrega</h3>
+
+              {/* De qué bodega sale el descuento. Va antes del producto porque
+                  el stock que se muestra abajo depende de esto. */}
+              <div style={{ marginBottom: 12 }}>
+                {puedeElegirRecinto ? (
+                  <>
+                    <select className="modal-input" value={recintoId}
+                      onChange={(e) => setRecintoId(e.target.value)}>
+                      <option value="">— Recinto de salida —</option>
+                      {recintos.map((r) => (
+                        <option key={r.recinto_id} value={r.recinto_id}>{r.nombre_recinto}</option>
+                      ))}
+                    </select>
+                    {!recintoId && (
+                      <p style={{ fontSize: 12, color: "var(--color-warning)", marginTop: 4 }}>
+                        Elegí el recinto para ver el stock disponible.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p style={{ fontSize: 13, color: "var(--color-text-secondary)", margin: 0 }}>
+                    Sale del stock de <strong>{user?.nombre_recinto ?? "tu recinto"}</strong>
+                  </p>
+                )}
+              </div>
+
               <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
                 <select className="modal-input" value={addProd}
                   onChange={(e) => { setAddProd(e.target.value); setAddTalla(""); }}>
