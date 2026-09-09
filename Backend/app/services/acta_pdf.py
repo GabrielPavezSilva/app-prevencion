@@ -23,7 +23,12 @@ TZ_CHILE = ZoneInfo("America/Santiago")
 MOTIVO_LABEL = {"NUEVA": "Nueva", "PERDIDA": "Reposición por pérdida", "DANO": "Sustitución por daño"}
 
 # Descripción, Tipo, Talla, Entrega, Recambio, Cant., Firma (mm; 190 útiles en A4)
-COL_ANCHOS = (46, 32, 14, 23, 27, 14, 34)
+# El `padding=1.5` de la tabla come 3 mm por celda: el ancho útil de cada
+# columna es el valor de acá menos 3, y ahí tiene que caber la palabra más
+# larga del título o fpdf2 la corta. "Cantidad" mide 11,3 mm en Helvetica 8 y
+# con 14 se cortaba en "Cantida"; los 2 mm salen de "Descripción EPP", que
+# sobra de ancho. El autochequeo de abajo verifica que sigan entrando todos.
+COL_ANCHOS = (44, 32, 14, 23, 27, 16, 34)
 COL_TITULOS = ("Descripción EPP", "Tipo de EPP", "Talla", "Fecha de entrega",
                "Fecha probable de recambio", "Cantidad", "Firma")
 
@@ -226,6 +231,14 @@ if __name__ == "__main__":
     # Y la etiqueta más larga del bloque entra en su ancho sin recorte.
     medidor.set_font("Helvetica", "", 10)
     assert _ajustar(medidor, 42, "Persona Trabajadora:") == "Persona Trabajadora:"
+
+    # Los títulos de la tabla entran en su columna: fpdf2 parte por palabras,
+    # así que lo que no puede caber es la palabra más larga de cada título.
+    assert sum(COL_ANCHOS) == 190, "la tabla se sale del A4"
+    medidor.set_font("Helvetica", "", 8)
+    for titulo, ancho in zip(COL_TITULOS, COL_ANCHOS):
+        peor = max(medidor.get_string_width(p) for p in titulo.split())
+        assert peor <= ancho - 3, f"'{titulo}' no cabe en {ancho}mm (necesita {peor:.1f})"
 
     trab = {"empresa": "ACME", "nombre_completo": "Ana Pérez", "rut": "11.111.111-1",
             "cargo": "Operaria", "nombre_area": "Producción"}
