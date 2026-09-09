@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 
+from app.core.security import resolver_recinto
 from app.repositories.epp_repository import EppRepository
 
 
@@ -109,12 +110,18 @@ class EppService:
 
     def listar_stock(self, producto_id: Optional[int] = None,
                      categoria_id: Optional[int] = None,
-                     bajo_minimo: bool = False) -> List[Dict[str, Any]]:
-        return self.repo.get_stock(producto_id, categoria_id, bajo_minimo)
+                     bajo_minimo: bool = False,
+                     recinto_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Lectura: sin filtro trae los tres recintos, a propósito."""
+        return self.repo.get_stock(producto_id, categoria_id, bajo_minimo, recinto_id)
+
+    def listar_recintos(self) -> List[Dict[str, Any]]:
+        return self.repo.get_recintos()
 
     def ajustar_stock(self, producto_id: int, talla_id: Optional[int],
                       cantidad_nueva: int, observacion: str,
-                      usuario_id: Optional[int]) -> Dict[str, Any]:
+                      usuario_id: Optional[int], current_user: Dict[str, Any],
+                      recinto_id: Optional[int] = None) -> Dict[str, Any]:
         observacion = (observacion or "").strip()
         if not observacion:
             raise HTTPException(status_code=400, detail="La observación del ajuste es obligatoria")
@@ -128,10 +135,14 @@ class EppService:
             raise HTTPException(status_code=400, detail="Este producto requiere talla")
         if not producto["talla_aplica"] and talla_id is not None:
             raise HTTPException(status_code=400, detail="Este producto no maneja tallas")
-        return self.repo.ajustar_stock(producto_id, talla_id, cantidad_nueva, observacion, usuario_id)
+        # Escritura: el recinto lo decide resolver_recinto, no el cliente.
+        recinto = resolver_recinto(current_user, recinto_id)
+        return self.repo.ajustar_stock(producto_id, talla_id, recinto,
+                                       cantidad_nueva, observacion, usuario_id)
 
     def listar_movimientos(self, producto_id: Optional[int] = None,
                           tipo: Optional[str] = None,
+                          recinto_id: Optional[int] = None,
                           desde: Optional[str] = None,
                           hasta: Optional[str] = None) -> List[Dict[str, Any]]:
         return self.repo.get_movimientos(producto_id, tipo, desde, hasta)

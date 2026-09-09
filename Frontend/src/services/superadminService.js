@@ -17,6 +17,11 @@ export const resetPassword = (userId, nueva_contrasena) =>
 export const cambiarPasswordPropio = (contrasena_actual, nueva_contrasena) =>
     apiClient.put(`${BASE}/usuarios/me/password`, { contrasena_actual, nueva_contrasena });
 
+// ── Recintos ──────────────────────────────────────────────────────────────────
+// Catálogo para el selector de recinto del usuario. Los recintos se siembran,
+// no se administran desde la app.
+export const getRecintosSuperadmin = () => apiClient.get(`${BASE}/recintos`);
+
 // ── Roles ─────────────────────────────────────────────────────────────────────
 
 export const getRoles = () => apiClient.get(`${BASE}/roles`);

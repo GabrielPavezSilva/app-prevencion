@@ -12,9 +12,11 @@ class AuthRepository:
         """Busca un usuario por su username en la tabla usuarios."""
         query = text("""
             SELECT u.user_id, u.username, u.correo, u.contrasena,
-                   u.activo, u.rol_id, r.nombre_rol
+                   u.activo, u.rol_id, r.nombre_rol,
+                   u.recinto_id, rec.nombre_recinto
             FROM usuarios u
             JOIN roles r ON u.rol_id = r.rol_id
+            LEFT JOIN recintos rec ON rec.recinto_id = u.recinto_id
             WHERE u.username = :username
         """)
         try:

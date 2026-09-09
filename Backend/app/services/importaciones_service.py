@@ -17,6 +17,8 @@ from typing import Optional, Dict, Any, List
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from fastapi import HTTPException
+from app.core.security import resolver_recinto
 from app.repositories.importaciones_repository import ImportacionesRepository
 from app.schemas.templates import DEFAULT_TEMPLATES
 from app.core.logging_config import logger
@@ -77,7 +79,8 @@ class ImportacionesService:
     # ── Orquestación ─────────────────────────────────────────────────────────
 
     def procesar(self, template_id: str, contenido: bytes, nombre_archivo: str,
-                 usuario_id: Optional[int]) -> Dict[str, Any]:
+                 usuario_id: Optional[int],
+                 current_user: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         template = next((t for t in DEFAULT_TEMPLATES if t.id == template_id), None)
         if not template:
             raise ValueError(f"Template '{template_id}' no existe")
@@ -114,7 +117,7 @@ class ImportacionesService:
             fila_num = int(idx) + 2  # +1 header, +1 base-1
             try:
                 with self.db.begin_nested():
-                    handler(r, usuario_id)
+                    handler(r, usuario_id, current_user)
                 filas_ok += 1
             except ValueError as e:
                 errores.append(f"Fila {fila_num}: {e}")
@@ -164,7 +167,37 @@ class ImportacionesService:
             return talla_id
         return None  # producto sin tallas: se ignora cualquier talla informada
 
-    def _row_productos(self, r: Dict[str, Any], usuario_id: Optional[int]) -> None:
+    def _resolver_recinto_fila(self, r: Dict[str, Any],
+                               current_user: Optional[Dict[str, Any]]) -> int:
+        """
+        Resuelve la columna Recinto de una fila del Excel.
+
+        El nombre se traduce a id y después pasa por `resolver_recinto`, así un
+        usuario de Lucerna no puede cargar stock a Malloco por archivo — la
+        misma regla que en la UI, en el mismo lugar.
+
+        `current_user` es opcional solo para seeds y smokes que llaman al
+        service sin sesión; el endpoint siempre lo manda.
+        """
+        nombre = _clean(r.get("recinto"))
+        if not nombre:
+            raise ValueError("'Recinto' es obligatorio")
+        recinto_id = self.repo.get_recinto_id(nombre)
+        if not recinto_id:
+            validos = ", ".join(self.repo.get_nombres_recintos())
+            raise ValueError(f"el recinto '{nombre}' no existe (válidos: {validos})")
+        if current_user is None:
+            return recinto_id
+        try:
+            return resolver_recinto(current_user, recinto_id)
+        except HTTPException as e:
+            # El batch trabaja con ValueError por fila; un 403 acá tiene que
+            # entrar por el mismo camino para que la política de todo-o-nada
+            # del template lo trate igual que cualquier otro error de fila.
+            raise ValueError(str(e.detail))
+
+    def _row_productos(self, r: Dict[str, Any], usuario_id: Optional[int],
+                       current_user: Optional[Dict[str, Any]] = None) -> None:
         nombre = _clean(r.get("nombre"))
         if not nombre:
             raise ValueError("'Nombre' es obligatorio")
@@ -179,7 +212,9 @@ class ImportacionesService:
         categoria_id = self.repo.get_categoria_id(categoria) or self.repo.crear_categoria(categoria)
         self.repo.crear_producto(nombre, categoria_id, talla_aplica, certificacion)
 
-    def _row_stock(self, r: Dict[str, Any], usuario_id: Optional[int]) -> None:
+    def _row_stock(self, r: Dict[str, Any], usuario_id: Optional[int],
+                   current_user: Optional[Dict[str, Any]] = None) -> None:
+        recinto_id = self._resolver_recinto_fila(r, current_user)
         nombre = _clean(r.get("producto"))
         if not nombre:
             raise ValueError("'Producto' es obligatorio")
@@ -202,9 +237,11 @@ class ImportacionesService:
         observacion = " · ".join(partes) if partes else None
 
         self.repo.ingresar_stock(prod["producto_id"], talla_id, cantidad,
-                                 stock_minimo, usuario_id, observacion)
+                                 stock_minimo, usuario_id, observacion, recinto_id)
 
-    def _row_entregas_historicas(self, r: Dict[str, Any], usuario_id: Optional[int]) -> None:
+    def _row_entregas_historicas(self, r: Dict[str, Any], usuario_id: Optional[int],
+                                 current_user: Optional[Dict[str, Any]] = None) -> None:
+        recinto_id = self._resolver_recinto_fila(r, current_user)
         rut = _clean(r.get("rut"))
         if not rut:
             raise ValueError("'RUT' es obligatorio")
@@ -227,7 +264,8 @@ class ImportacionesService:
         fecha = _parse_fecha(r.get("fecha"))
 
         self.repo.insertar_entrega_historica(
-            trabajador, prod["producto_id"], talla_id, cantidad, motivo, fecha, usuario_id
+            trabajador, prod["producto_id"], talla_id, cantidad, motivo, fecha,
+            usuario_id, recinto_id
         )
 
     # ── Consulta ─────────────────────────────────────────────────────────────

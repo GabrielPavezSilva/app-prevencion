@@ -77,6 +77,7 @@ db = SessionLocal()
 # la secuencia no avanzó, el siguiente INSERT choca contra la PK.
 # Talla 'M' existe; 'XL' NO — es la que va a hacer fallar las filas.
 db.execute(text("INSERT INTO tallas (nombre_talla) VALUES ('M')"))
+db.execute(text("INSERT INTO recintos (nombre_recinto) VALUES ('Las Encinas'), ('Lucerna')"))
 db.execute(text("INSERT INTO categorias_epp (nombre_categoria) VALUES ('Cabeza')"))
 db.execute(text("""INSERT INTO productos_epp (nombre, categoria_id, talla_aplica, activo)
                    SELECT 'Casco', categoria_id, FALSE, TRUE FROM categorias_epp
@@ -91,11 +92,11 @@ svc = ImportacionesService(db)
 
 seccion("1. stock_inicial — una fila mala revierte todo")
 
-COLS_STOCK = ["Producto", "Talla", "Cantidad", "Stock Mínimo"]
+COLS_STOCK = ["Recinto", "Producto", "Talla", "Cantidad", "Stock Mínimo"]
 r = svc.procesar("stock_inicial", xlsx(COLS_STOCK, [
-    ("Casco",   None, 10, 2),     # válida
-    ("Chaleco", "M",  5,  1),     # válida
-    ("Chaleco", "XL", 7,  1),     # la talla no existe → error
+    ("Las Encinas", "Casco",   None, 10, 2),     # válida
+    ("Las Encinas", "Chaleco", "M",  5,  1),     # válida
+    ("Las Encinas", "Chaleco", "XL", 7,  1),     # la talla no existe → error
 ]), "stock.xlsx", usuario_id=None)
 
 check("aplicado = False", r["aplicado"] is False, str(r["aplicado"]))
@@ -110,8 +111,8 @@ check("el intento igual quedó registrado",
 seccion("2. stock_inicial — archivo sano sí entra")
 
 r = svc.procesar("stock_inicial", xlsx(COLS_STOCK, [
-    ("Casco",   None, 10, 2),
-    ("Chaleco", "M",  5,  1),
+    ("Las Encinas", "Casco",   None, 10, 2),
+    ("Las Encinas", "Chaleco", "M",  5,  1),
 ]), "stock_ok.xlsx", usuario_id=None)
 
 check("aplicado = True", r["aplicado"] is True)
@@ -126,8 +127,8 @@ check("libro mayor cuadra con el stock",
 seccion("3. El rechazo no arrastra lo ya cargado")
 
 r = svc.procesar("stock_inicial", xlsx(COLS_STOCK, [
-    ("Casco",   None, 99, 2),     # válida, pero cae con el resto
-    ("Chaleco", "XL", 7,  1),     # error
+    ("Las Encinas", "Casco",   None, 99, 2),     # válida, pero cae con el resto
+    ("Las Encinas", "Chaleco", "XL", 7,  1),     # error
 ]), "stock_mixto.xlsx", usuario_id=None)
 
 check("aplicado = False", r["aplicado"] is False)
@@ -136,6 +137,41 @@ check("el stock previo queda intacto en 15 unidades",
       str(escalar(db, "SELECT SUM(cantidad_actual) FROM stock_epp")))
 check("no se sumó el ingreso de 99",
       escalar(db, "SELECT COUNT(*) FROM movimientos_stock WHERE cantidad = 99") == 0)
+
+seccion("3b. Un recinto inválido revierte todo el archivo")
+
+r = svc.procesar("stock_inicial", xlsx(COLS_STOCK, [
+    ("Lucerna",  "Casco", None, 8, 2),     # válida, en el otro recinto
+    ("Mallocco", "Casco", None, 8, 2),     # typo → el recinto no existe
+]), "stock_recinto_malo.xlsx", usuario_id=None)
+
+check("aplicado = False", r["aplicado"] is False)
+check("el error nombra los recintos válidos",
+      "Las Encinas" in (r.get("detalle_errores") or "") or
+      any("Las Encinas" in e for e in (r.get("errores") or [])),
+      str(r.get("detalle_errores") or r.get("errores")))
+check("no entró la fila buena del recinto Lucerna",
+      escalar(db, """SELECT COUNT(*) FROM stock_epp s JOIN recintos r
+                     ON r.recinto_id = s.recinto_id
+                     WHERE r.nombre_recinto = 'Lucerna'""") == 0)
+
+seccion("3c. El mismo producto+talla convive en dos recintos")
+
+r = svc.procesar("stock_inicial", xlsx(COLS_STOCK, [
+    ("Lucerna", "Chaleco", "M", 4, 1),
+]), "stock_lucerna.xlsx", usuario_id=None)
+
+check("aplicado = True", r["aplicado"] is True, str(r.get("detalle_errores")))
+check("Chaleco M existe en los dos recintos, sin chocar contra el UNIQUE",
+      escalar(db, """SELECT COUNT(*) FROM stock_epp s
+                     JOIN productos_epp p ON p.producto_id = s.producto_id
+                     JOIN tallas t ON t.talla_id = s.talla_id
+                     WHERE p.nombre = 'Chaleco' AND t.nombre_talla = 'M'""") == 2)
+check("cada recinto tiene su propia cantidad",
+      sorted(x[0] for x in db.execute(text(
+          """SELECT s.cantidad_actual FROM stock_epp s
+             JOIN productos_epp p ON p.producto_id = s.producto_id
+             WHERE p.nombre = 'Chaleco'""")).fetchall()) == [4, 5])
 
 # ── 4. Catálogo: política parcial ────────────────────────────────────────────
 

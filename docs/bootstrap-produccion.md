@@ -161,7 +161,7 @@ Abrí el túnel y **dejá esa terminal abierta** — mientras corra, el `5433` d
 máquina es el `5433` del VPS:
 
 ```powershell
-$ ssh -N -L 5433:localhost:5433 <usuario>@<vps>
+$ ssh -N -L 5433:localhost:5435 <usuario>@<vps>
 ```
 
 Si en el paso 1 elegiste otro puerto en el VPS, el mapeo es

@@ -9,6 +9,9 @@ class UsuarioCreate(BaseModel):
     contrasena: str
     rol_id: int
     activo: bool = True
+    # Recinto en el que opera. None solo para los roles de FULL_ACCESS_ROLES:
+    # un usuario común sin recinto no puede mover stock (403).
+    recinto_id: Optional[int] = None
 
 
 class UsuarioUpdate(BaseModel):
@@ -16,6 +19,10 @@ class UsuarioUpdate(BaseModel):
     correo: Optional[str] = None
     rol_id: Optional[int] = None
     activo: Optional[bool] = None
+    # Se distingue "no informado" de "ponerlo en NULL" con el flag de abajo:
+    # en este schema None ya significa lo primero.
+    recinto_id: Optional[int] = None
+    limpiar_recinto: bool = False
 
 
 class UsuarioPasswordReset(BaseModel):
@@ -35,6 +42,13 @@ class UsuarioResponse(BaseModel):
     nombre_rol: str
     activo: bool
     creado_en: Optional[datetime] = None
+    recinto_id: Optional[int] = None
+    nombre_recinto: Optional[str] = None
+
+
+class RecintoResponse(BaseModel):
+    recinto_id: int
+    nombre_recinto: str
 
 
 class ModuloResponse(BaseModel):

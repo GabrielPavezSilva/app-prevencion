@@ -24,7 +24,14 @@ export const createProducto = (data) => apiClient.post('/epp/productos', data);
 export const updateProducto = (id, data) => apiClient.put(`/epp/productos/${id}`, data);
 export const deleteProducto = (id) => apiClient.delete(`/epp/productos/${id}`);
 
+// ── Recintos ────────────────────────────────────────────────────────────────
+// Catálogo de solo lectura: los recintos se siembran, no se administran desde
+// la app (ver seed_recintos.py).
+export const getRecintos = () => apiClient.get('/epp/recintos');
+
 // ── Stock y movimientos ─────────────────────────────────────────────────────
+// Sin `recinto_id` el listado trae los tres recintos, a propósito: saber dónde
+// hay existencias es para lo que sirve.
 export const getStock = (params = {}) => apiClient.get(`/epp/stock${qs(params)}`);
 export const ajustarStock = (data) => apiClient.post('/epp/stock/ajuste', data);
 export const getMovimientos = (params = {}) => apiClient.get(`/epp/movimientos${qs(params)}`);

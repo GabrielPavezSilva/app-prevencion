@@ -4,13 +4,22 @@ import { useState, useMemo } from 'react';
  * Ajuste manual de stock. Fija la cantidad a un valor absoluto (el backend
  * registra el delta como movimiento AJUSTE). La observación es obligatoria.
  *
- * - Si `stockRow` viene informado: edita esa fila (producto/talla bloqueados).
+ * - Si `stockRow` viene informado: edita esa fila (producto/talla/recinto bloqueados).
  * - Si no: alta/ajuste eligiendo producto (y talla si el producto la maneja).
+ *
+ * El recinto es obligatorio y no puede quedar en blanco. Quien tiene recinto
+ * propio lo ve fijo; solo los roles sin recinto asignado (admin) lo eligen —
+ * misma regla que aplica `resolver_recinto` en el backend.
  */
-const AjusteStockModal = ({ stockRow, productos = [], tallas = [], onGuardar, onCerrar, guardando, errorServidor }) => {
+const AjusteStockModal = ({ stockRow, productos = [], tallas = [], recintos = [],
+                            recintoPropio = null, puedeElegirRecinto = false,
+                            onGuardar, onCerrar, guardando, errorServidor }) => {
     const esEdicion = !!stockRow;
     const [productoId, setProductoId] = useState(stockRow?.producto_id ?? '');
     const [tallaId, setTallaId] = useState(stockRow?.talla_id ?? '');
+    const [recintoId, setRecintoId] = useState(
+        stockRow?.recinto_id ?? recintoPropio ?? ''
+    );
     const [cantidad, setCantidad] = useState(stockRow ? String(stockRow.cantidad_actual) : '');
     const [observacion, setObservacion] = useState('');
     const [errorLocal, setErrorLocal] = useState('');
@@ -24,6 +33,7 @@ const AjusteStockModal = ({ stockRow, productos = [], tallas = [], onGuardar, on
     const handleSubmit = (e) => {
         e.preventDefault();
         if (!productoId) return setErrorLocal('Selecciona un producto');
+        if (!recintoId) return setErrorLocal('Selecciona el recinto');
         if (requiereTalla && !tallaId) return setErrorLocal('Este producto requiere talla');
         if (cantidad === '' || Number(cantidad) < 0) return setErrorLocal('Cantidad inválida');
         if (!observacion.trim()) return setErrorLocal('La observación es obligatoria');
@@ -31,6 +41,7 @@ const AjusteStockModal = ({ stockRow, productos = [], tallas = [], onGuardar, on
         onGuardar({
             producto_id: Number(productoId),
             talla_id: requiereTalla ? Number(tallaId) : null,
+            recinto_id: Number(recintoId),
             cantidad_nueva: Number(cantidad),
             observacion: observacion.trim(),
         });
@@ -43,6 +54,33 @@ const AjusteStockModal = ({ stockRow, productos = [], tallas = [], onGuardar, on
 
                 <form onSubmit={handleSubmit}>
                     <div className="modal-field">
+                        <label className="modal-label">Recinto *</label>
+                        {esEdicion || !puedeElegirRecinto ? (
+                            <input
+                                className="modal-input"
+                                value={
+                                    stockRow?.nombre_recinto
+                                    ?? recintos.find((r) => r.recinto_id === Number(recintoId))?.nombre_recinto
+                                    ?? ''
+                                }
+                                disabled
+                            />
+                        ) : (
+                            <select
+                                className="modal-input"
+                                value={recintoId}
+                                onChange={(e) => setRecintoId(e.target.value)}
+                                disabled={guardando}
+                            >
+                                <option value="">— Selecciona —</option>
+                                {recintos.map((r) => (
+                                    <option key={r.recinto_id} value={r.recinto_id}>{r.nombre_recinto}</option>
+                                ))}
+                            </select>
+                        )}
+                    </div>
+
+                    <div className="modal-field">
                         <label className="modal-label">Producto *</label>
                         {esEdicion ? (
                             <input className="modal-input" value={stockRow.nombre_producto} disabled />
@@ -52,7 +90,7 @@ const AjusteStockModal = ({ stockRow, productos = [], tallas = [], onGuardar, on
                                 value={productoId}
                                 onChange={(e) => { setProductoId(e.target.value); setTallaId(''); }}
                                 disabled={guardando}
-                                autoFocus
+                                autoFocus={!puedeElegirRecinto}
                             >
                                 <option value="">— Selecciona —</option>
                                 {productos.map((p) => (

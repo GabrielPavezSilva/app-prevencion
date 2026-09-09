@@ -28,6 +28,7 @@ Seeds (idempotentes, primera vez):
 cd Backend
 venv/Scripts/python.exe seed_admin.py       # usuario admin
 venv/Scripts/python.exe seed_modulos.py     # módulos y permisos por rol
+venv/Scripts/python.exe seed_recintos.py    # Las Encinas, Lucerna, Malloco
 ```
 
 ### Frontend
@@ -83,6 +84,7 @@ Smoke tests existentes:
 | Script | Cubre | Requiere |
 |---|---|---|
 | `tests/smoke_reportes.py` | Los 3 reportes + dashboard | Solo Docker |
+| `tests/smoke_recintos.py` | Stock por recinto: UNIQUE, permisos, libro mayor | Solo Docker |
 | `tests/smoke_importaciones.py` | Políticas de error de importación (todo o nada vs parcial) | Solo Docker |
 | `tests/smoke_sync_personal.py` | Sync de personal desde RRHH | Docker + túnel SSH a RRHH |
 
@@ -158,11 +160,13 @@ Todas bajo el prefijo `/api`. Registradas en `app/api/v1/api.py`.
 
 **`productos_epp`** — catálogo (una fila por tipo de EPP, no por unidad): `producto_id`, `nombre` UNIQUE, `categoria_id`, `talla_aplica`, `certificacion`, `activo`.
 
-**`stock_epp`** — existencias por producto+talla. Stock **global**, un solo bodegón sin segregar por empresa: `producto_id`, `talla_id` (NULL si el producto no maneja tallas), `cantidad_actual`, `stock_minimo`, UNIQUE(producto_id, talla_id).
+**`stock_epp`** — existencias por producto+talla+**recinto**: `producto_id`, `talla_id` (NULL si el producto no maneja tallas), `recinto_id`, `cantidad_actual`, `stock_minimo`, UNIQUE(producto_id, talla_id, recinto_id). Cada recinto tiene bodega propia y el mismo casco talla L existe por separado en los tres. (Hasta la Fase 6 el stock era global, un solo bodegón; ver `docs/plans/2026-09-09-stock-por-recinto-design.md`.)
+
+**`recintos`** — los tres con bodega propia: Las Encinas, Lucerna, Malloco. `recinto_id`, `nombre_recinto` UNIQUE, `activo`. Sin CRUD en la app: un cuarto recinto es un `INSERT` — se agrega a la lista de `seed_recintos.py` y se corre de nuevo.
 
 **`movimientos_stock`** — libro mayor: `tipo` ∈ `INGRESO_IMPORT | ENTREGA | BAJA_DANO | AJUSTE`, `cantidad` (positiva o negativa), `referencia_id`, `fecha`.
 
-**`entregas_epp`** — entrega de EPP a un trabajador: `rut`, `nombre_completo` y `empresa_id` (denormalizados al momento de la entrega), `producto_id`, `talla_id`, `cantidad`, `motivo` ∈ `NUEVA | PERDIDA | DANO`, `entrega_reemplazada_id`, `estado_firma`, `fecha_entrega`, `uuid` UNIQUE (idempotencia offline).
+**`entregas_epp`** — entrega de EPP a un trabajador: `rut`, `nombre_completo`, `empresa_id` y `recinto_id` (denormalizados al momento de la entrega), `producto_id`, `talla_id`, `cantidad`, `motivo` ∈ `NUEVA | PERDIDA | DANO`, `entrega_reemplazada_id`, `estado_firma`, `fecha_entrega`, `uuid` UNIQUE (idempotencia offline).
 
 **`personal`** — empleados sincronizados desde RRHH: `rut` PK, `nombre_completo`, `empresa_id` FK, `cargo`, `area_id`, `subarea_id`, `activo` (soft-delete de desvinculados), `buk_id`, `sync_at`. **No tiene talla**: se elige en cada entrega.
 
@@ -183,7 +187,11 @@ stock_epp.cantidad_actual = SUM(movimientos_stock.cantidad
 
 `BAJA_DANO` queda fuera a propósito: documenta la baja de una unidad que ya estaba en terreno (su stock se descontó al entregarla), no descuenta del bodegón.
 
-**Talla NULL.** En PostgreSQL `NULL = NULL` es NULL, así que el `UNIQUE(producto_id, talla_id)` **no** impide filas duplicadas para productos sin talla. Todo lookup, upsert o join por (producto, talla) usa `talla_id IS NOT DISTINCT FROM :talla_id`.
+**Talla NULL.** En PostgreSQL `NULL = NULL` es NULL, así que el `UNIQUE(producto_id, talla_id, recinto_id)` **no** impide filas duplicadas para productos sin talla. Todo lookup, upsert o join usa `talla_id IS NOT DISTINCT FROM :talla_id`. `recinto_id` es NOT NULL y va con `=` normal.
+
+**La identidad de una fila de stock es la terna `(producto_id, talla_id, recinto_id)`**, en seis lugares: el `UNIQUE`, `epp_repository.get_stock_row` / `get_stock_detalle` / `ajustar_stock`, `entregas_repository._get_stock_row` y el upsert de `importaciones_repository`. Si se agrega un séptimo, va con la terna completa.
+
+**Quién puede mover qué recinto.** `resolver_recinto(current_user, recinto_id)` en `app/core/security.py`, al lado de `require_module`. Regla: **todos ven los tres recintos, cada uno mueve solo el suyo**. Un rol de `FULL_ACCESS_ROLES` no tiene recinto propio, así que tiene que elegirlo (400 si no lo manda); un usuario con recinto que pide otro recibe 403 en vez de que se le ignore en silencio; sin recinto asignado y sin bypass, 403. Aplica solo a **escrituras** — las lecturas traen los tres a propósito. El recinto viaja en el JWT junto a `modulos`: **una sesión abierta desde antes de este cambio no lo trae y recibe 403 hasta volver a loguearse.**
 
 **Zona horaria.** La BD corre en **UTC** y `fecha_entrega` es `TIMESTAMP WITHOUT TIME ZONE` con `server_default=now()`: guarda hora UTC. El negocio opera en Chile. Sin convertir, una entrega del 31 a las 21:00 hora local cae en el mes siguiente. Todo agrupamiento y filtro por fecha usa la constante `FECHA_LOCAL` de `app/repositories/reportes_repository.py`:
 
@@ -206,6 +214,7 @@ Está definido igual en `entregas_repository`, `personal_repository` y `reportes
 - **`DANO`** — sustitución. **Solo vía `POST /entregas/sustitucion`**, que exige `entrega_reemplazada_id`. `POST /entregas` rechaza este motivo. Descuenta stock y registra `BAJA_DANO` del ítem devuelto.
 - No existe devolución de EPP sin reemplazo.
 - El carrito de entregas es **una sola transacción**: si una línea no tiene stock suficiente, se revierte completa.
+- Todo el carrito sale de **un mismo recinto** — no se acepta una línea por recinto: un acta firmada que mezcle bodegas no tendría a quién imputarle el descuento. En una sustitución, el reemplazo sale del recinto elegido pero la `BAJA_DANO` se imputa al recinto de la **entrega original**, que es de donde salió el ítem.
 - Un trabajador desvinculado no puede recibir EPP nuevo, pero sus entregas se conservan y se pueden consultar.
 
 ## Políticas de error de las importaciones
@@ -216,6 +225,8 @@ Está definido igual en `entregas_repository`, `personal_repository` y `reportes
 |---|---|---|
 | `stock_inicial`, `ingreso_stock` | **Todo o nada** | Un ingreso a medias deja el bodegón mintiendo. Y como el ingreso es **aditivo**, reintentar el archivo corregido volvería a sumar las filas que sí habían entrado: nadie recorta el Excel antes del segundo intento |
 | `productos_epp`, `entregas_historicas` | **Parcial** | Cargar 28 de 30 productos y corregir dos es más cómodo que rehacer el archivo, y el catálogo tolera estar incompleto un rato |
+
+Las tres plantillas que escriben stock o entregas (`stock_inicial`, `ingreso_stock`, `entregas_historicas`) exigen una columna **`Recinto`** con el nombre exacto. Cada fila pasa por `resolver_recinto`, así que un usuario de Lucerna no puede cargar a Malloco ni por Excel; el 403 se traduce a error de fila para que la política del template lo trate como cualquier otro.
 
 Cuando se revierte, la respuesta trae `aplicado: false` y `filas_ok: 0`, pero **la importación igual se registra** en `importaciones` — el rastro del intento fallido es lo que hay que conservar. La UI muestra "No se aplicó ningún cambio" en vez del conteo parcial.
 
@@ -320,5 +331,6 @@ Lo que **queda** por revisar:
 | Stock valorizado | No hay precio en `productos_epp` |
 | Capa offline | Dexie, `syncManager` y `OfflineBanner` están montados en `main.jsx`, pero **nada encola operaciones**: la cola nunca se llena. El puente que faltaba (`api/offlineWrapper.js`) se borró en la poda; completar la capa implica escribirlo de nuevo o decidir que la app siempre opera con red |
 | Despliegue | Las imágenes ya son `ghcr.io/gabrielpavezsilva/prevencion-*`, pero **falta definir la variable `DEPLOY_DIR`** del repositorio con la ruta del checkout en el VPS: sin ella, `deploy.yml` falla a propósito (antes apuntaba al directorio de la lavandería y habría reiniciado el stack equivocado). Siguen con nombre viejo `scripts/deploy.sh`, `docs/staging-deploy.md` y `airflow/dags/backup_lavanderia_db.py`, que dependen de rutas reales del servidor |
-| Migraciones | No hay. Cambiar una columna existente requiere hacerlo a mano en la BD |
+| Migraciones | No hay. Cambiar una columna existente requiere hacerlo a mano en la BD; los scripts quedan versionados en `Backend/migrations/` con la fecha |
+| Traslados entre recintos | Fuera de alcance de la Fase 6. Con tres bodegas separadas va a hacer falta un `MovimientoStock` tipo `TRASLADO`; mientras tanto cada recinto carga por importación o ajuste |
 | Ramas | `main`, `fase-1`, `fase-4`, `fase-5` en el remoto; **ninguna fase está mergeada a `main`** |

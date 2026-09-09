@@ -69,6 +69,7 @@ db.execute(text("""INSERT INTO areas (area_id, nombre_area, empresa_id)
                    VALUES (1,'Operaciones',1),(2,'Administración',1),(3,'Operaciones',2)"""))
 db.execute(text("""INSERT INTO subareas (subarea_id, nombre_subarea, area_id)
                    VALUES (1,'Planta',1),(2,'Contabilidad',2)"""))
+db.execute(text("INSERT INTO recintos (recinto_id, nombre_recinto, activo) VALUES (1,'Las Encinas',TRUE)"))
 db.execute(text("INSERT INTO tallas (talla_id, nombre_talla) VALUES (1,'M'),(2,'L')"))
 db.execute(text("INSERT INTO categorias_epp (categoria_id, nombre_categoria) VALUES (1,'Cabeza'),(2,'Calzado')"))
 db.execute(text("""INSERT INTO productos_epp (producto_id, nombre, categoria_id, talla_aplica, activo)
@@ -83,11 +84,14 @@ db.execute(text("""INSERT INTO personal (rut, nombre_completo, empresa_id, cargo
 db.commit()
 
 epp = EppRepository(db)
-# Casco (sin talla) y protector: stock global; botas por talla.
-epp.ajustar_stock(1, None, 20, "carga inicial", None)
-epp.ajustar_stock(2, 1, 10, "carga inicial", None)
-epp.ajustar_stock(2, 2, 10, "carga inicial", None)
-epp.ajustar_stock(3, None, 5, "carga inicial", None)
+# Un único recinto: este smoke cubre los reportes, no la segregación por
+# recinto — eso lo prueba tests/smoke_recintos.py.
+RECINTO = 1
+# Casco (sin talla) y protector sin talla; botas por talla.
+epp.ajustar_stock(1, None, RECINTO, 20, "carga inicial", None)
+epp.ajustar_stock(2, 1, RECINTO, 10, "carga inicial", None)
+epp.ajustar_stock(2, 2, RECINTO, 10, "carga inicial", None)
+epp.ajustar_stock(3, None, RECINTO, 5, "carga inicial", None)
 db.execute(text("UPDATE stock_epp SET stock_minimo = 5 WHERE producto_id = 1"))
 db.execute(text("UPDATE stock_epp SET stock_minimo = 4 WHERE producto_id = 2"))
 db.execute(text("UPDATE stock_epp SET stock_minimo = 3 WHERE producto_id = 3"))
@@ -105,25 +109,25 @@ dario = entregas.get_trabajador("4-4", solo_activos=False)
 e_casco_ana = entregas.crear_entregas(ana, [
     {"producto_id": 1, "talla_id": None, "cantidad": 1, "motivo": "NUEVA"},
     {"producto_id": 2, "talla_id": 1, "cantidad": 1, "motivo": "NUEVA"},
-], None)
+], None, RECINTO)
 id_casco_ana = e_casco_ana[0]["entrega_id"]
 
 # Beto: protector NUEVA
 e_beto = entregas.crear_entregas(beto, [
     {"producto_id": 3, "talla_id": None, "cantidad": 1, "motivo": "NUEVA"},
-], None)
+], None, RECINTO)
 
 # Dario (desvinculado) conserva un casco sin devolver
 entregas.crear_entregas(dario, [
     {"producto_id": 1, "talla_id": None, "cantidad": 1, "motivo": "NUEVA"},
-], None)
+], None, RECINTO)
 
 seccion("2. Q6 — PERDIDA vinculada retira la entrega perdida de los vigentes")
 vig_antes = len(entregas.get_vigentes_por_rut("1-1"))
 entregas.crear_entregas(ana, [{
     "producto_id": 1, "talla_id": None, "cantidad": 1, "motivo": "PERDIDA",
     "entrega_reemplazada_id": id_casco_ana,
-}], None)
+}], None, RECINTO)
 vig_despues = entregas.get_vigentes_por_rut("1-1")
 check("vigentes no aumentan tras la reposición",
       len(vig_despues) == vig_antes, f"antes={vig_antes} después={len(vig_despues)}")
@@ -134,7 +138,8 @@ check("PERDIDA no genera BAJA_DANO",
 
 seccion("3. Sustitución por daño (DANO)")
 botas_ana = next(v for v in vig_despues if v["producto_id"] == 2)
-entregas.crear_sustitucion(ana, botas_ana["entrega_id"], 2, 1, 1, "rotas", None, None)
+entregas.crear_sustitucion(ana, botas_ana["entrega_id"], 2, 1, 1, "rotas", None, None,
+                           RECINTO)
 vig_final = entregas.get_vigentes_por_rut("1-1")
 check("la entrega dañada sale de vigentes",
       all(v["entrega_id"] != botas_ana["entrega_id"] for v in vig_final))
@@ -171,7 +176,7 @@ check("fecha convertida a hora de Chile", fecha_local.day == 31 and fecha_local.
 # correcta sea cual sea la zona de la sesión.
 recien = entregas.crear_entregas(beto, [
     {"producto_id": 3, "talla_id": None, "cantidad": 1, "motivo": "NUEVA"},
-], None)
+], None, RECINTO)
 esperado = escalar(db, "SELECT now() AT TIME ZONE 'America/Santiago'")
 fila = next(r for r in svc.trazabilidad({}) if r["entrega_id"] == recien[0]["entrega_id"])
 desfase = abs((fila["fecha_entrega"] - esperado).total_seconds())
@@ -228,8 +233,8 @@ check("resumen concatena el detalle",
       any("Casco" in (r["detalle"] or "") for r in resumen))
 
 seccion("7. R3 — Stock y quiebres")
-epp.ajustar_stock(3, None, 0, "forzar quiebre", None)      # protector → QUIEBRE
-epp.ajustar_stock(1, None, 4, "forzar bajo mínimo", None)  # casco (min 5) → BAJO
+epp.ajustar_stock(3, None, RECINTO, 0, "forzar quiebre", None)      # protector → QUIEBRE
+epp.ajustar_stock(1, None, RECINTO, 4, "forzar bajo mínimo", None)  # casco (min 5) → BAJO
 stock = svc.stock()
 por_prod = {(r["producto"], r["talla"]): r for r in stock}
 check("una fila por producto+talla, sin duplicar los sin talla",

@@ -30,6 +30,7 @@ DEFAULT_TEMPLATES = [
         name="Stock Inicial",
         description="Poblar el stock por primera vez (ingreso de existencias)",
         columns=[
+            ImportColumn(name="Recinto", field="recinto", required=True),
             ImportColumn(name="Producto", field="producto", required=True),
             ImportColumn(name="Talla", field="talla", required=False),
             ImportColumn(name="Cantidad", field="cantidad", required=True),
@@ -41,6 +42,7 @@ DEFAULT_TEMPLATES = [
         name="Ingreso de Stock",
         description="Reposiciones periódicas / órdenes de compra",
         columns=[
+            ImportColumn(name="Recinto", field="recinto", required=True),
             ImportColumn(name="Producto", field="producto", required=True),
             ImportColumn(name="Talla", field="talla", required=False),
             ImportColumn(name="Cantidad", field="cantidad", required=True),
@@ -53,6 +55,7 @@ DEFAULT_TEMPLATES = [
         name="Entregas Históricas",
         description="Migrar historial de entregas del software antiguo (no afecta stock actual)",
         columns=[
+            ImportColumn(name="Recinto", field="recinto", required=True),
             ImportColumn(name="RUT", field="rut", required=True),
             ImportColumn(name="Producto", field="producto", required=True),
             ImportColumn(name="Talla", field="talla", required=False),

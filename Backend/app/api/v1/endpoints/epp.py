@@ -12,7 +12,7 @@ from app.services.epp_service import EppService
 from app.schemas.epp import (
     CategoriaCreate, CategoriaResponse,
     ProductoCreate, ProductoUpdate, ProductoResponse,
-    StockResponse, AjusteStockRequest, MovimientoResponse,
+    StockResponse, AjusteStockRequest, MovimientoResponse, RecintoResponse,
 )
 
 router = APIRouter()
@@ -86,9 +86,17 @@ def eliminar_producto(producto_id: int, db: Session = Depends(get_mysql_db),
 def listar_stock(producto_id: Optional[int] = None,
                  categoria_id: Optional[int] = None,
                  bajo_minimo: bool = Query(False, description="Solo ítems con cantidad ≤ stock mínimo"),
+                 recinto_id: Optional[int] = Query(None, description="Filtra por recinto; sin él trae los tres"),
                  db: Session = Depends(get_mysql_db),
                  _: dict = Depends(get_current_user)):
-    return EppService(db).listar_stock(producto_id, categoria_id, bajo_minimo)
+    return EppService(db).listar_stock(producto_id, categoria_id, bajo_minimo, recinto_id)
+
+
+@router.get("/recintos", response_model=List[RecintoResponse])
+def listar_recintos(db: Session = Depends(get_mysql_db),
+                    _: dict = Depends(get_current_user)):
+    """Catálogo de recintos activos, para los selectores de la UI."""
+    return EppService(db).listar_recintos()
 
 
 @router.post("/stock/ajuste", response_model=StockResponse)
@@ -100,6 +108,8 @@ def ajustar_stock(payload: AjusteStockRequest, db: Session = Depends(get_mysql_d
         cantidad_nueva=payload.cantidad_nueva,
         observacion=payload.observacion,
         usuario_id=current_user.get("userId"),
+        current_user=current_user,
+        recinto_id=payload.recinto_id,
     )
 
 
@@ -108,8 +118,9 @@ def ajustar_stock(payload: AjusteStockRequest, db: Session = Depends(get_mysql_d
 @router.get("/movimientos", response_model=List[MovimientoResponse])
 def listar_movimientos(producto_id: Optional[int] = None,
                        tipo: Optional[str] = None,
+                       recinto_id: Optional[int] = Query(None, description="Filtra por recinto"),
                        desde: Optional[str] = Query(None, description="Fecha ISO desde (inclusive)"),
                        hasta: Optional[str] = Query(None, description="Fecha ISO hasta (inclusive)"),
                        db: Session = Depends(get_mysql_db),
                        _: dict = Depends(get_current_user)):
-    return EppService(db).listar_movimientos(producto_id, tipo, desde, hasta)
+    return EppService(db).listar_movimientos(producto_id, tipo, recinto_id, desde, hasta)

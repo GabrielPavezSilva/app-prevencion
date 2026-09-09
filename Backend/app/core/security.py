@@ -121,6 +121,52 @@ def require_module(*modules: str):
     return dependency
 
 
+def resolver_recinto(current_user: dict, recinto_id_pedido: Optional[int] = None) -> int:
+    """
+    Decide de qué recinto sale una operación de stock: "todos ven los tres,
+    cada uno mueve solo el suyo".
+
+    Va acá y no en un endpoint porque es la misma clase de decisión que
+    `require_module`, y porque la usan cuatro services distintos (stock,
+    ajuste, entregas, importaciones) que si no la repetirían con criterios que
+    se van separando.
+
+    Solo aplica a **escrituras**. Las lecturas no pasan por acá: el listado de
+    stock trae los tres recintos a propósito, para saber dónde hay existencias
+    antes de pedir un traslado.
+    """
+    propio = current_user.get("recinto_id")
+
+    if current_user.get("role") in FULL_ACCESS_ROLES:
+        # Bypass de módulos, pero no de recinto: un admin no tiene recinto
+        # propio, así que no hay default razonable y adivinar uno mandaría
+        # stock a la bodega equivocada en silencio.
+        if recinto_id_pedido is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Indica el recinto: tu rol no tiene uno asignado por defecto",
+            )
+        return int(recinto_id_pedido)
+
+    if propio is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tu usuario no tiene recinto asignado. Pide a un administrador "
+                   "que te asigne uno para poder mover stock.",
+        )
+
+    # Falla en vez de ignorar: si el cliente pidió otro recinto, o la UI está
+    # mandando algo que no corresponde o alguien está probando la API a mano.
+    # Descontar del recinto propio sin avisar esconde las dos cosas.
+    if recinto_id_pedido is not None and int(recinto_id_pedido) != int(propio):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Solo puedes mover stock de tu propio recinto",
+        )
+
+    return int(propio)
+
+
 # ponytail: self-check de la lógica de módulos (no framework, corre con `python security.py`)
 if __name__ == "__main__":
     def _check(role, mods, required):
@@ -135,3 +181,22 @@ if __name__ == "__main__":
     assert _check("worker_asignacion", ["worker_asignacion"], ("inventario", "worker_asignacion")) is True
     assert _check("x", None, ("dashboard",)) is False           # modulos None no crashea
     print("require_module self-check OK")
+
+    # resolver_recinto: los tres casos de la tabla del diseño.
+    def _falla(user, pedido):
+        try:
+            resolver_recinto(user, pedido)
+        except HTTPException as e:
+            return e.status_code
+        return None
+
+    bodeguero = {"role": "bodeguero", "recinto_id": 2}
+    assert resolver_recinto(bodeguero, None) == 2          # usa el suyo sin pedirlo
+    assert resolver_recinto(bodeguero, 2) == 2             # pedir el propio es válido
+    assert _falla(bodeguero, 3) == 403                     # otro recinto: no lo ignora, falla
+    assert _falla({"role": "bodeguero", "recinto_id": None}, 1) == 403  # sin recinto asignado
+    assert resolver_recinto({"role": "admin", "recinto_id": None}, 3) == 3  # admin elige
+    assert _falla({"role": "admin", "recinto_id": None}, None) == 400   # admin sin elegir
+    # El bypass de módulos no arrastra bypass de recinto.
+    assert _falla({"role": "administrador", "recinto_id": None}, None) == 400
+    print("resolver_recinto self-check OK")

@@ -22,6 +22,10 @@ class UserResponse(BaseModel):
     email: str
     role: str
     modulos: list[str] = []
+    # Recinto en el que opera. None para los roles de FULL_ACCESS_ROLES, que
+    # eligen recinto en cada operación en vez de tener uno fijo.
+    recinto_id: int | None = None
+    nombre_recinto: str | None = None
 
 
 class LoginResponse(BaseModel):
