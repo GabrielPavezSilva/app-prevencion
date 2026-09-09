@@ -36,6 +36,9 @@ class Usuario(Base):
     correo = Column(String(100), nullable=False, unique=True)
     contrasena = Column(String(255), nullable=False)
     rol_id = Column(Integer, ForeignKey("roles.rol_id"), nullable=False)
+    # Recinto en el que opera. NULL para los roles de FULL_ACCESS_ROLES, que
+    # ven los tres y eligen el recinto en cada operación.
+    recinto_id = Column(Integer, ForeignKey("recintos.recinto_id"), nullable=True)
     activo = Column(Boolean, default=True)
     creado_en = Column(DateTime, server_default=func.now())
     ultimo_login = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -199,10 +202,29 @@ class ProductoEpp(Base):
     categoria = relationship("CategoriaEpp", back_populates="productos")
 
 
+class Recinto(Base):
+    """
+    Recinto físico con bodega propia: Las Encinas, Lucerna, Malloco.
+
+    No tiene CRUD en la app a propósito: son tres y cambian cada varios años,
+    así que un cuarto recinto es un INSERT y no una pantalla. El seed está en
+    `seed_recintos.py`.
+    """
+    __tablename__ = "recintos"
+
+    recinto_id = Column(Integer, primary_key=True, autoincrement=True)
+    nombre_recinto = Column(String(60), nullable=False, unique=True)
+    activo = Column(Boolean, nullable=False, default=True)
+
+
 class StockEpp(Base):
     """
-    Stock disponible por producto+talla. Stock GLOBAL (D4): un solo bodegón,
-    sin segregación por empresa.
+    Stock disponible por producto+talla+recinto: cada recinto tiene bodega
+    propia y el mismo casco talla L existe por separado en los tres.
+
+    La identidad de una fila es la terna completa, no el par producto+talla —
+    todo lookup, upsert y join la usa entera. Antes el stock era global (un
+    solo bodegón); ver docs/plans/2026-09-09-stock-por-recinto-design.md.
 
     Regla de oro: cantidad_actual NUNCA se edita directo desde la app; siempre
     cambia a través de un MovimientoStock (transacción atómica).
@@ -212,11 +234,13 @@ class StockEpp(Base):
     stock_id = Column(Integer, primary_key=True, autoincrement=True)
     producto_id = Column(Integer, ForeignKey("productos_epp.producto_id"), nullable=False)
     talla_id = Column(Integer, ForeignKey("tallas.talla_id"), nullable=True)
+    recinto_id = Column(Integer, ForeignKey("recintos.recinto_id"), nullable=False)
     cantidad_actual = Column(Integer, nullable=False, default=0)
     stock_minimo = Column(Integer, nullable=False, default=0)
 
     __table_args__ = (
-        UniqueConstraint("producto_id", "talla_id", name="uq_stock_producto_talla"),
+        UniqueConstraint("producto_id", "talla_id", "recinto_id",
+                         name="uq_stock_producto_talla_recinto"),
     )
 
 
@@ -230,6 +254,7 @@ class MovimientoStock(Base):
     movimiento_id = Column(Integer, primary_key=True, autoincrement=True)
     producto_id = Column(Integer, ForeignKey("productos_epp.producto_id"), nullable=False)
     talla_id = Column(Integer, ForeignKey("tallas.talla_id"), nullable=True)
+    recinto_id = Column(Integer, ForeignKey("recintos.recinto_id"), nullable=False)
     tipo = Column(String(20), nullable=False)   # INGRESO_IMPORT | ENTREGA | BAJA_DANO | AJUSTE
     cantidad = Column(Integer, nullable=False)  # positivo (ingreso) o negativo (salida)
     referencia_id = Column(Integer, nullable=True)  # entrega_id o importacion_id según tipo
@@ -255,6 +280,10 @@ class EntregaEpp(Base):
     empresa_id = Column(Integer, ForeignKey("empresa.empresa_id"), nullable=True)  # denormalizado
     producto_id = Column(Integer, ForeignKey("productos_epp.producto_id"), nullable=False)
     talla_id = Column(Integer, ForeignKey("tallas.talla_id"), nullable=True)
+    # Recinto del que salió el EPP, denormalizado igual que empresa_id: el dato
+    # se puede reconstruir desde el MovimientoStock ENTREGA, pero eso obliga a
+    # joinear por referencia_id en cada reporte.
+    recinto_id = Column(Integer, ForeignKey("recintos.recinto_id"), nullable=False)
     cantidad = Column(Integer, nullable=False, default=1)
     motivo = Column(String(20), nullable=False)   # NUEVA | PERDIDA | DANO
     entrega_reemplazada_id = Column(Integer, ForeignKey("entregas_epp.entrega_id"), nullable=True)

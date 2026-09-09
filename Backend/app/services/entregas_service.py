@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any, Optional
 
+from app.core.security import resolver_recinto
 from app.repositories.entregas_repository import EntregasRepository
 from app.repositories.epp_repository import EppRepository
 from app.schemas.entregas import MOTIVOS_ENTREGA
@@ -39,7 +40,9 @@ class EntregasService:
     # ── Entregas (NUEVA / PERDIDA) ───────────────────────────────────────────
 
     def crear_entregas(self, rut: str, lineas: List[Dict[str, Any]],
-                       usuario_id: Optional[int], firma: str) -> List[Dict[str, Any]]:
+                       usuario_id: Optional[int], firma: str,
+                       current_user: Dict[str, Any],
+                       recinto_id: Optional[int] = None) -> List[Dict[str, Any]]:
         trabajador = self._get_trabajador(rut)
         try:
             firma_png = firma_desde_data_url(firma)
@@ -59,8 +62,10 @@ class EntregasService:
                            "que se dio por perdida",
                 )
             self._validar_producto_talla(linea["producto_id"], linea.get("talla_id"))
+        # Todo el carrito sale del mismo recinto: es un acta, un descuento.
+        recinto = resolver_recinto(current_user, recinto_id)
         try:
-            return self.repo.crear_entregas(trabajador, lineas, usuario_id, firma_png)
+            return self.repo.crear_entregas(trabajador, lineas, usuario_id, recinto, firma_png)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -69,7 +74,8 @@ class EntregasService:
     def crear_sustitucion(self, rut: str, entrega_reemplazada_id: int, producto_id: int,
                           talla_id: Optional[int], cantidad: int, observacion: Optional[str],
                           usuario_id: Optional[int], uuid: Optional[str],
-                          firma: str) -> Dict[str, Any]:
+                          firma: str, current_user: Dict[str, Any],
+                          recinto_id: Optional[int] = None) -> Dict[str, Any]:
         trabajador = self._get_trabajador(rut)
         self._validar_producto_talla(producto_id, talla_id)
         try:
@@ -81,6 +87,7 @@ class EntregasService:
                 trabajador=trabajador, entrega_reemplazada_id=entrega_reemplazada_id,
                 producto_id=producto_id, talla_id=talla_id, cantidad=cantidad,
                 observacion=observacion, usuario_id=usuario_id, uuid=uuid,
+                recinto_id=resolver_recinto(current_user, recinto_id),
                 firma_png=firma_png,
             )
         except ValueError as e:

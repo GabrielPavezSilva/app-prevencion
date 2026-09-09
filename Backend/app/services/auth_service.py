@@ -38,11 +38,17 @@ class AuthService:
         modulos = self.repository.get_modulos_for_rol(user["rol_id"])
 
         # Generar token JWT
+        # El recinto viaja en el token igual que los módulos: `resolver_recinto`
+        # lo lee desde current_user en cada escritura de stock, sin ir a la base.
+        # Los tokens emitidos antes de esta versión no lo traen, así que sus
+        # sesiones tienen que volver a loguearse para mover stock.
         token_data = {
             "userId": user["user_id"],
             "username": user["username"],
             "role": user["nombre_rol"],
             "modulos": modulos,
+            "recinto_id": user.get("recinto_id"),
+            "nombre_recinto": user.get("nombre_recinto"),
         }
         token = create_access_token(data=token_data)
 
@@ -52,7 +58,10 @@ class AuthService:
             email=user["correo"],
             role=user["nombre_rol"],
             modulos=modulos,
+            recinto_id=user.get("recinto_id"),
+            nombre_recinto=user.get("nombre_recinto"),
         )
 
-        logger.info(f"Login exitoso: {username} (role: {user['nombre_rol']}, módulos: {modulos})")
+        logger.info(f"Login exitoso: {username} (role: {user['nombre_rol']}, "
+                    f"módulos: {modulos}, recinto: {user.get('nombre_recinto') or '-'})")
         return LoginResponse(token=token, user=user_response)

@@ -2,10 +2,17 @@
 Repository del dominio EPP — SQL crudo con sqlalchemy.text() (PostgreSQL).
 
 Nota sobre stock y talla_id NULL:
-  El UNIQUE(producto_id, talla_id) de stock_epp NO impide filas duplicadas
-  cuando talla_id es NULL (en PostgreSQL NULL != NULL en índices únicos). Por
-  eso los lookups usan `talla_id IS NOT DISTINCT FROM :talla_id`, que trata
-  NULL = NULL, y el upsert es explícito (SELECT → INSERT/UPDATE).
+  El UNIQUE(producto_id, talla_id, recinto_id) de stock_epp NO impide filas
+  duplicadas cuando talla_id es NULL (en PostgreSQL NULL != NULL en índices
+  únicos). Por eso los lookups usan `talla_id IS NOT DISTINCT FROM :talla_id`,
+  que trata NULL = NULL, y el upsert es explícito (SELECT → INSERT/UPDATE).
+  `recinto_id` es NOT NULL, así que va con `=` normal.
+
+Nota sobre recinto:
+  La identidad de una fila de stock es la terna producto+talla+recinto — el
+  mismo casco talla L existe por separado en cada bodega. Los filtros por
+  recinto en las lecturas son opcionales a propósito: quién puede *escribir*
+  en qué recinto lo decide `resolver_recinto` en app/core/security.py.
 """
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -161,7 +168,8 @@ class EppRepository:
 
     def update_producto(self, producto_id: int, fields: Dict[str, Any]) -> Dict[str, Any]:
         """Actualización parcial: solo columnas informadas (whitelist)."""
-        permitidas = {"nombre", "categoria_id", "talla_aplica", "certificacion", "descripcion", "activo"}
+        permitidas = {"nombre", "categoria_id", "talla_aplica", "certificacion",
+                      "descripcion", "vida_util_meses", "activo"}
         sets = [f"{col} = :{col}" for col in fields if col in permitidas]
         if not sets:
             return self.get_producto_by_id(producto_id)
@@ -195,15 +203,25 @@ class EppRepository:
 
     def get_stock(self, producto_id: Optional[int] = None,
                   categoria_id: Optional[int] = None,
-                  bajo_minimo: bool = False) -> List[Dict[str, Any]]:
+                  bajo_minimo: bool = False,
+                  recinto_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Listado de stock. `recinto_id` es un filtro **opcional**: sin él trae
+        los tres recintos, que es lo que la tabla de Inventario muestra por
+        defecto — saber dónde hay existencias es justamente para lo que sirve.
+        Las restricciones por recinto son de escritura (`resolver_recinto`), no
+        de lectura.
+        """
         sql = """
             SELECT s.stock_id, s.producto_id, p.nombre AS nombre_producto,
                    p.categoria_id, c.nombre_categoria,
                    s.talla_id, t.nombre_talla,
+                   s.recinto_id, r.nombre_recinto,
                    s.cantidad_actual, s.stock_minimo,
                    (s.cantidad_actual <= s.stock_minimo) AS bajo_minimo
             FROM stock_epp s
             JOIN productos_epp p ON p.producto_id = s.producto_id
+            JOIN recintos r ON r.recinto_id = s.recinto_id
             LEFT JOIN categorias_epp c ON c.categoria_id = p.categoria_id
             LEFT JOIN tallas t ON t.talla_id = s.talla_id
             WHERE 1=1
@@ -215,56 +233,86 @@ class EppRepository:
         if categoria_id is not None:
             sql += " AND p.categoria_id = :categoria_id"
             params["categoria_id"] = categoria_id
+        if recinto_id is not None:
+            sql += " AND s.recinto_id = :recinto_id"
+            params["recinto_id"] = recinto_id
         if bajo_minimo:
             sql += " AND s.cantidad_actual <= s.stock_minimo"
-        sql += " ORDER BY p.nombre, t.nombre_talla"
+        sql += " ORDER BY r.nombre_recinto, p.nombre, t.nombre_talla"
         result = self.db.execute(text(sql), params).mappings().fetchall()
         return [dict(r) for r in result]
 
-    def get_stock_row(self, producto_id: int, talla_id: Optional[int]) -> Optional[Dict[str, Any]]:
-        """Fila cruda de stock (columnas mínimas) para lógica de upsert."""
+    def get_recintos(self) -> List[Dict[str, Any]]:
+        """Catálogo de recintos activos, para poblar los selectores de la UI."""
+        result = self.db.execute(text("""
+            SELECT recinto_id, nombre_recinto
+            FROM recintos
+            WHERE activo = TRUE
+            ORDER BY nombre_recinto
+        """)).mappings().fetchall()
+        return [dict(r) for r in result]
+
+    def get_stock_row(self, producto_id: int, talla_id: Optional[int],
+                      recinto_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Fila cruda de stock (columnas mínimas) para lógica de upsert.
+
+        La identidad es la terna producto+talla+recinto. `talla_id` sigue con
+        `IS NOT DISTINCT FROM` porque puede ser NULL; `recinto_id` es NOT NULL
+        y va con `=`.
+        """
         row = self.db.execute(
             text("""
-                SELECT stock_id, producto_id, talla_id, cantidad_actual, stock_minimo
+                SELECT stock_id, producto_id, talla_id, recinto_id,
+                       cantidad_actual, stock_minimo
                 FROM stock_epp
                 WHERE producto_id = :producto_id
                   AND talla_id IS NOT DISTINCT FROM :talla_id
+                  AND recinto_id = :recinto_id
             """),
-            {"producto_id": producto_id, "talla_id": talla_id},
+            {"producto_id": producto_id, "talla_id": talla_id, "recinto_id": recinto_id},
         ).mappings().fetchone()
         return dict(row) if row else None
 
-    def get_stock_detalle(self, producto_id: int, talla_id: Optional[int]) -> Optional[Dict[str, Any]]:
+    def get_stock_detalle(self, producto_id: int, talla_id: Optional[int],
+                          recinto_id: int) -> Optional[Dict[str, Any]]:
         """Fila de stock enriquecida (nombres + bajo_minimo), forma StockResponse."""
         row = self.db.execute(
             text("""
                 SELECT s.stock_id, s.producto_id, p.nombre AS nombre_producto,
                        p.categoria_id, c.nombre_categoria,
                        s.talla_id, t.nombre_talla,
+                       s.recinto_id, r.nombre_recinto,
                        s.cantidad_actual, s.stock_minimo,
                        (s.cantidad_actual <= s.stock_minimo) AS bajo_minimo
                 FROM stock_epp s
                 JOIN productos_epp p ON p.producto_id = s.producto_id
+                JOIN recintos r ON r.recinto_id = s.recinto_id
                 LEFT JOIN categorias_epp c ON c.categoria_id = p.categoria_id
                 LEFT JOIN tallas t ON t.talla_id = s.talla_id
                 WHERE s.producto_id = :producto_id
                   AND s.talla_id IS NOT DISTINCT FROM :talla_id
+                  AND s.recinto_id = :recinto_id
             """),
-            {"producto_id": producto_id, "talla_id": talla_id},
+            {"producto_id": producto_id, "talla_id": talla_id, "recinto_id": recinto_id},
         ).mappings().fetchone()
         return dict(row) if row else None
 
     def ajustar_stock(self, producto_id: int, talla_id: Optional[int],
-                      cantidad_nueva: int, observacion: str,
+                      recinto_id: int, cantidad_nueva: int, observacion: str,
                       usuario_id: Optional[int]) -> Dict[str, Any]:
         """
-        Fija el stock a un valor absoluto en una transacción atómica:
+        Fija el stock de una terna producto+talla+recinto a un valor absoluto,
+        en una transacción atómica:
           1. Upsert de la fila de stock_epp (crea si no existe).
           2. Registra un MovimientoStock tipo AJUSTE con el delta.
         Devuelve la fila de stock resultante.
+
+        El recinto ya viene resuelto por `resolver_recinto`: acá no se decide
+        de qué bodega se trata, solo se escribe.
         """
         try:
-            actual = self.get_stock_row(producto_id, talla_id)
+            actual = self.get_stock_row(producto_id, talla_id, recinto_id)
             cantidad_anterior = actual["cantidad_actual"] if actual else 0
             delta = cantidad_nueva - cantidad_anterior
 
@@ -276,26 +324,31 @@ class EppRepository:
             else:
                 self.db.execute(
                     text("""
-                        INSERT INTO stock_epp (producto_id, talla_id, cantidad_actual, stock_minimo)
-                        VALUES (:producto_id, :talla_id, :cant, 0)
+                        INSERT INTO stock_epp
+                            (producto_id, talla_id, recinto_id, cantidad_actual, stock_minimo)
+                        VALUES (:producto_id, :talla_id, :recinto_id, :cant, 0)
                     """),
-                    {"producto_id": producto_id, "talla_id": talla_id, "cant": cantidad_nueva},
+                    {"producto_id": producto_id, "talla_id": talla_id,
+                     "recinto_id": recinto_id, "cant": cantidad_nueva},
                 )
 
             self.db.execute(
                 text("""
                     INSERT INTO movimientos_stock
-                        (producto_id, talla_id, tipo, cantidad, usuario_id, observacion)
+                        (producto_id, talla_id, recinto_id, tipo, cantidad,
+                         usuario_id, observacion)
                     VALUES
-                        (:producto_id, :talla_id, 'AJUSTE', :delta, :usuario_id, :observacion)
+                        (:producto_id, :talla_id, :recinto_id, 'AJUSTE', :delta,
+                         :usuario_id, :observacion)
                 """),
                 {
-                    "producto_id": producto_id, "talla_id": talla_id, "delta": delta,
+                    "producto_id": producto_id, "talla_id": talla_id,
+                    "recinto_id": recinto_id, "delta": delta,
                     "usuario_id": usuario_id, "observacion": observacion,
                 },
             )
             self.db.commit()
-            return self.get_stock_detalle(producto_id, talla_id)
+            return self.get_stock_detalle(producto_id, talla_id, recinto_id)
         except Exception as e:
             self.db.rollback()
             logger.error(f"Error al ajustar stock: {type(e).__name__}: {str(e)}")
@@ -307,14 +360,17 @@ class EppRepository:
                         tipo: Optional[str] = None,
                         desde: Optional[str] = None,
                         hasta: Optional[str] = None,
+                        recinto_id: Optional[int] = None,
                         limit: int = 200) -> List[Dict[str, Any]]:
         sql = """
             SELECT m.movimiento_id, m.producto_id, p.nombre AS nombre_producto,
                    m.talla_id, t.nombre_talla,
+                   m.recinto_id, r.nombre_recinto,
                    m.tipo, m.cantidad, m.referencia_id, m.usuario_id,
                    m.observacion, m.fecha
             FROM movimientos_stock m
             LEFT JOIN productos_epp p ON p.producto_id = m.producto_id
+            LEFT JOIN recintos r ON r.recinto_id = m.recinto_id
             LEFT JOIN tallas t ON t.talla_id = m.talla_id
             WHERE 1=1
         """
@@ -322,6 +378,9 @@ class EppRepository:
         if producto_id is not None:
             sql += " AND m.producto_id = :producto_id"
             params["producto_id"] = producto_id
+        if recinto_id is not None:
+            sql += " AND m.recinto_id = :recinto_id"
+            params["recinto_id"] = recinto_id
         if tipo:
             sql += " AND m.tipo = :tipo"
             params["tipo"] = tipo

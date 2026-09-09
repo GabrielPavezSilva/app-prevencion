@@ -47,15 +47,22 @@ class EntregasRepository:
         ).mappings().fetchone()
         return dict(row) if row else None
 
-    def _get_stock_row(self, producto_id: int, talla_id: Optional[int]) -> Optional[Dict[str, Any]]:
+    def _get_stock_row(self, producto_id: int, talla_id: Optional[int],
+                       recinto_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Fila de stock de la que se va a descontar. El recinto es parte de la
+        identidad: hay stock del mismo producto+talla en las tres bodegas y una
+        entrega solo puede salir de una.
+        """
         row = self.db.execute(
             text("""
                 SELECT stock_id, cantidad_actual
                 FROM stock_epp
                 WHERE producto_id = :producto_id
                   AND talla_id IS NOT DISTINCT FROM :talla_id
+                  AND recinto_id = :recinto_id
             """),
-            {"producto_id": producto_id, "talla_id": talla_id},
+            {"producto_id": producto_id, "talla_id": talla_id, "recinto_id": recinto_id},
         ).mappings().fetchone()
         return dict(row) if row else None
 
@@ -71,11 +78,13 @@ class EntregasRepository:
                e.producto_id, p.nombre AS nombre_producto,
                c.nombre_categoria, p.vida_util_meses,
                e.talla_id, t.nombre_talla,
+               e.recinto_id, r.nombre_recinto,
                e.cantidad, e.motivo, e.entrega_reemplazada_id,
                e.estado_firma, e.acta_id, e.usuario_entrega, e.observacion, e.fecha_entrega
         FROM entregas_epp e
         LEFT JOIN productos_epp p ON p.producto_id = e.producto_id
         LEFT JOIN categorias_epp c ON c.categoria_id = p.categoria_id
+        LEFT JOIN recintos r ON r.recinto_id = e.recinto_id
         LEFT JOIN tallas t ON t.talla_id = e.talla_id
     """
 
@@ -91,34 +100,38 @@ class EntregasRepository:
     def _insertar_entrega(self, trabajador: Dict[str, Any], producto_id: int,
                           talla_id: Optional[int], cantidad: int, motivo: str,
                           usuario_id: Optional[int], observacion: Optional[str],
-                          uuid: Optional[str],
+                          uuid: Optional[str], recinto_id: int,
                           entrega_reemplazada_id: Optional[int] = None) -> int:
         """Inserta una fila de entrega + su movimiento ENTREGA y descuenta stock."""
-        stock = self._get_stock_row(producto_id, talla_id)
+        stock = self._get_stock_row(producto_id, talla_id, recinto_id)
         disponible = stock["cantidad_actual"] if stock else 0
         if disponible < cantidad:
+            # El recinto va en el mensaje: "no hay stock" a secas manda a buscar
+            # un producto que puede estar completo en otra bodega.
             raise ValueError(
                 f"Stock insuficiente para el producto {producto_id}"
                 + (f" (talla {talla_id})" if talla_id else "")
+                + f" en el recinto {recinto_id}"
                 + f": disponible {disponible}, requerido {cantidad}"
             )
 
         entrega_id = self.db.execute(
             text("""
                 INSERT INTO entregas_epp
-                    (rut, nombre_completo, empresa_id, producto_id, talla_id, cantidad,
-                     motivo, entrega_reemplazada_id, estado_firma, usuario_entrega,
+                    (rut, nombre_completo, empresa_id, producto_id, talla_id, recinto_id,
+                     cantidad, motivo, entrega_reemplazada_id, estado_firma, usuario_entrega,
                      observacion, uuid)
                 VALUES
-                    (:rut, :nombre_completo, :empresa_id, :producto_id, :talla_id, :cantidad,
-                     :motivo, :entrega_reemplazada_id, 'PENDIENTE', :usuario_id,
+                    (:rut, :nombre_completo, :empresa_id, :producto_id, :talla_id, :recinto_id,
+                     :cantidad, :motivo, :entrega_reemplazada_id, 'PENDIENTE', :usuario_id,
                      :observacion, :uuid)
                 RETURNING entrega_id
             """),
             {
                 "rut": trabajador["rut"], "nombre_completo": trabajador["nombre_completo"],
                 "empresa_id": trabajador.get("empresa_id"),
-                "producto_id": producto_id, "talla_id": talla_id, "cantidad": cantidad,
+                "producto_id": producto_id, "talla_id": talla_id,
+                "recinto_id": recinto_id, "cantidad": cantidad,
                 "motivo": motivo, "entrega_reemplazada_id": entrega_reemplazada_id,
                 "usuario_id": usuario_id, "observacion": observacion, "uuid": uuid,
             },
@@ -127,12 +140,15 @@ class EntregasRepository:
         self.db.execute(
             text("""
                 INSERT INTO movimientos_stock
-                    (producto_id, talla_id, tipo, cantidad, referencia_id, usuario_id, observacion)
+                    (producto_id, talla_id, recinto_id, tipo, cantidad, referencia_id,
+                     usuario_id, observacion)
                 VALUES
-                    (:producto_id, :talla_id, 'ENTREGA', :cantidad, :ref, :usuario_id, :observacion)
+                    (:producto_id, :talla_id, :recinto_id, 'ENTREGA', :cantidad, :ref,
+                     :usuario_id, :observacion)
             """),
             {
-                "producto_id": producto_id, "talla_id": talla_id, "cantidad": -cantidad,
+                "producto_id": producto_id, "talla_id": talla_id,
+                "recinto_id": recinto_id, "cantidad": -cantidad,
                 "ref": entrega_id, "usuario_id": usuario_id, "observacion": observacion,
             },
         )
@@ -211,10 +227,14 @@ class EntregasRepository:
         return dict(row) if row else None
 
     def crear_entregas(self, trabajador: Dict[str, Any], lineas: List[Dict[str, Any]],
-                       usuario_id: Optional[int],
+                       usuario_id: Optional[int], recinto_id: int,
                        firma_png: Optional[bytes] = None) -> List[Dict[str, Any]]:
         """
         Carrito de N líneas (motivos NUEVA/PERDIDA) en una sola transacción.
+
+        Todo el carrito sale de un mismo `recinto_id` — ya resuelto por
+        `resolver_recinto`. No se acepta una línea por recinto: un acta firmada
+        que mezcle bodegas no tendría a quién imputarle el descuento.
 
         Una línea PERDIDA puede vincular la entrega que se dio por perdida
         (`entrega_reemplazada_id`): así deja de contar como vigente. No genera
@@ -242,6 +262,7 @@ class EntregasRepository:
                     usuario_id=usuario_id,
                     observacion=linea.get("observacion"),
                     uuid=uuid,
+                    recinto_id=recinto_id,
                     entrega_reemplazada_id=reemplazada_id,
                 )
                 creadas.append(entrega_id)
@@ -268,7 +289,8 @@ class EntregasRepository:
     def get_entrega_reemplazable(self, entrega_id: int, rut: str) -> Dict[str, Any]:
         """Valida que la entrega exista, sea del trabajador y esté vigente."""
         reemplazada = self.db.execute(
-            text("SELECT entrega_id, rut, producto_id, talla_id, cantidad FROM entregas_epp WHERE entrega_id = :id"),
+            text("SELECT entrega_id, rut, producto_id, talla_id, recinto_id, cantidad "
+                 "FROM entregas_epp WHERE entrega_id = :id"),
             {"id": entrega_id},
         ).mappings().fetchone()
         if not reemplazada:
@@ -286,7 +308,7 @@ class EntregasRepository:
     def crear_sustitucion(self, trabajador: Dict[str, Any], entrega_reemplazada_id: int,
                           producto_id: int, talla_id: Optional[int], cantidad: int,
                           observacion: Optional[str], usuario_id: Optional[int],
-                          uuid: Optional[str],
+                          uuid: Optional[str], recinto_id: int,
                           firma_png: Optional[bytes] = None) -> Dict[str, Any]:
         """
         Sustitución por daño (motivo DANO), transacción única:
@@ -307,7 +329,7 @@ class EntregasRepository:
             entrega_id = self._insertar_entrega(
                 trabajador=trabajador, producto_id=producto_id, talla_id=talla_id,
                 cantidad=cantidad, motivo="DANO", usuario_id=usuario_id,
-                observacion=observacion, uuid=uuid,
+                observacion=observacion, uuid=uuid, recinto_id=recinto_id,
                 entrega_reemplazada_id=entrega_reemplazada_id,
             )
 
@@ -315,12 +337,18 @@ class EntregasRepository:
             self.db.execute(
                 text("""
                     INSERT INTO movimientos_stock
-                        (producto_id, talla_id, tipo, cantidad, referencia_id, usuario_id, observacion)
+                        (producto_id, talla_id, recinto_id, tipo, cantidad, referencia_id,
+                         usuario_id, observacion)
                     VALUES
-                        (:producto_id, :talla_id, 'BAJA_DANO', :cantidad, :ref, :usuario_id, :observacion)
+                        (:producto_id, :talla_id, :recinto_id, 'BAJA_DANO', :cantidad, :ref,
+                         :usuario_id, :observacion)
                 """),
                 {
                     "producto_id": reemplazada["producto_id"], "talla_id": reemplazada["talla_id"],
+                    # El recinto es el de la entrega original, no el del usuario que
+                    # registra la sustitución: la baja documenta un ítem que salió de
+                    # esa bodega, y ahí tiene que quedar el rastro.
+                    "recinto_id": reemplazada["recinto_id"],
                     "cantidad": -reemplazada["cantidad"], "ref": entrega_reemplazada_id,
                     "usuario_id": usuario_id,
                     "observacion": observacion or f"Baja por daño (reemplaza entrega {entrega_reemplazada_id})",

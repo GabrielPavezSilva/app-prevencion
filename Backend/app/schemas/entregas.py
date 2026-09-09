@@ -26,6 +26,10 @@ class EntregaLinea(BaseModel):
 class EntregaCreate(BaseModel):
     rut: str
     lineas: List[EntregaLinea] = Field(..., min_length=1)
+    # Recinto del que sale todo el carrito. Opcional acá porque
+    # `resolver_recinto` lo completa con el del usuario; solo los roles de
+    # acceso total tienen que mandarlo, y para ellos es obligatorio.
+    recinto_id: Optional[int] = None
     # Firma del trabajador en el acta, PNG del canvas ("data:image/png;base64,…").
     # Obligatoria: sin acta firmada no hay entrega.
     firma: str = Field(..., min_length=32)
@@ -39,6 +43,7 @@ class SustitucionCreate(BaseModel):
     cantidad: int = Field(1, gt=0)
     observacion: Optional[str] = None
     uuid: Optional[str] = None
+    recinto_id: Optional[int] = None
     # Igual que en la entrega directa: sin acta firmada no se entrega el reemplazo.
     firma: str = Field(..., min_length=32)
 
@@ -52,6 +57,8 @@ class EntregaResponse(BaseModel):
     nombre_producto: Optional[str] = None
     talla_id: Optional[int] = None
     nombre_talla: Optional[str] = None
+    recinto_id: Optional[int] = None
+    nombre_recinto: Optional[str] = None
     cantidad: int
     motivo: str
     entrega_reemplazada_id: Optional[int] = None

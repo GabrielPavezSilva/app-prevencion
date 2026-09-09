@@ -26,7 +26,8 @@ def crear_entregas(payload: EntregaCreate, db: Session = Depends(get_mysql_db),
     """
     lineas = [linea.model_dump() for linea in payload.lineas]
     return EntregasService(db).crear_entregas(
-        payload.rut, lineas, current_user.get("userId"), payload.firma)
+        payload.rut, lineas, current_user.get("userId"), payload.firma,
+        current_user=current_user, recinto_id=payload.recinto_id)
 
 
 @router.get("/acta/{acta_id}")
@@ -66,6 +67,7 @@ def crear_sustitucion(payload: SustitucionCreate, db: Session = Depends(get_mysq
         producto_id=payload.producto_id, talla_id=payload.talla_id,
         cantidad=payload.cantidad, observacion=payload.observacion,
         usuario_id=current_user.get("userId"), uuid=payload.uuid, firma=payload.firma,
+        current_user=current_user, recinto_id=payload.recinto_id,
     )
 
 
